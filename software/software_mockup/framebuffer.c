@@ -35,11 +35,7 @@ struct fb_fix_screeninfo fb_finfo;
 
 unsigned char *framebuffer;
 
-int cur_receive_row = 1, cursor_pos = 0;
-
-bool is_blinking = 0, last_line_incomplete = 0;
-
-int max_cols, max_rows, max_receive_row; 
+int max_cols, max_rows; 
 
 static unsigned char font[];
 
@@ -60,10 +56,8 @@ int fbopen() {
 	if(ioctl(fd, FBIOGET_VSCREENINFO, &fb_vinfo)) /* Get varying info about fb */
 		return FBOPEN_VSCREENINFO;
 	
-	max_cols = fb_finfo.line_length / 4 / FONT_WIDTH / 2;
-	max_rows = fb_finfo.smem_len / fb_finfo.line_length / FONT_HEIGHT / 2;
-	
-	max_receive_row = max_rows - 5;
+	max_cols = fb_finfo.line_length / 4;
+	max_rows = fb_finfo.smem_len / fb_finfo.line_length;
 	
 	if(fb_vinfo.bits_per_pixel != 32) 
 		return FBOPEN_BPP; /* Unexpected */
@@ -81,26 +75,31 @@ int fbopen() {
  * Clear the screen
  */
 void fb_clear_screen() {
+	
+	//printf("%d %d",max_rows, max_cols);
+	
 	memset(framebuffer, 0, fb_finfo.smem_len);
 }
 
 
 void fb_draw_column(int column_num, int top_of_wall, int width, int projected_wall_height) {
 
-    int floor_color = 5;
+	//printf("%d %d %d %d", column_num, top_of_wall, width, projected_wall_height);
+
+    int floor_color = 10;
     int wall_color = 255;
-    int ceiling_color = 100;
+    int ceiling_color = 50;
 
     for(int cur_row=0; cur_row < max_rows; cur_row++) {
 
-        int color = cur_row > top_of_wall ? ceiling_color
-            : cur_row < (top_of_wall + projected_wall_height) ? floor_color
+        int color = cur_row < top_of_wall ? ceiling_color
+            : cur_row > (top_of_wall + projected_wall_height) ? floor_color
             : wall_color;
 
-        int start_pos = framebuffer + (fb_finfo.line_length * cur_row)
-            + width * column_num;
+        unsigned char *start_pos = framebuffer + (max_cols * cur_row * 4)
+            + (column_num * 4);
 
-        memset(start_pos, color, width);
+       memset(start_pos, color, width * 4);
     }
 }
 

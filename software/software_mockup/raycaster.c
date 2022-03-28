@@ -2,6 +2,7 @@
 Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
 TODO:
+0. keyboard
 1. Collision detection
 2. Texture mapping
 3. Bit shift operations for speedup
@@ -9,6 +10,8 @@ TODO:
 5. fogging / transparency effect to show distance in z axis
 
 6. Threaded update the future hardware
+7. usb controller input?
+8. sprites?
 
 */
 
@@ -25,8 +28,8 @@ TODO:
 // size of tile (wall height)
 #define TILE_SIZE 64
 #define WALL_HEIGHT 64
-#define PROJECTIONPLANEWIDTH 640
-#define PROJECTIONPLANEHEIGHT 480
+#define PROJECTIONPLANEWIDTH 1024
+#define PROJECTIONPLANEHEIGHT 768
 #define ANGLE60 PROJECTIONPLANEWIDTH
 #define ANGLE30 (ANGLE60/2)
 #define ANGLE15 (ANGLE30/2)
@@ -70,21 +73,13 @@ static const uint8_t O = 0; // opening
 static const uint8_t MAP_WIDTH = 12;
 static const uint8_t MAP_HEIGHT = 12;
 
-uint8_t fMap[MAP_WIDTH * MAP_HEIGHT] =
-    {
-        W,W,W,W,W,W,W,W,W,W,W,W,
-        W,O,O,O,O,O,O,O,O,O,O,W,
-        W,O,O,O,O,O,O,O,O,O,O,W,
-        W,O,O,O,O,O,O,O,W,O,O,W,
-        W,O,O,W,O,W,O,O,W,O,O,W,
-        W,O,O,W,O,W,W,O,W,O,O,W,
-        W,O,O,W,O,O,W,O,W,O,O,W,
-        W,O,O,O,W,O,W,O,W,O,O,W,
-        W,O,O,O,W,O,W,O,W,O,O,W,
-        W,O,O,O,W,W,W,O,W,O,O,W,
-        W,O,O,O,O,O,O,O,O,O,O,W,
-        W,W,W,W,W,W,W,W,W,W,W,W
-    };
+uint8_t *fMap;
+
+//function signatures
+void render();
+void create_tables();
+float arc_to_rad(float);
+
 
 int main() {
 
@@ -362,6 +357,27 @@ void create_tables() {
         // this will give range 0 to 320
         fFishTable[i + ANGLE30] = (float)(1.0F / cos(radian));
     }
+	
+	fMap = (uint8_t*)calloc((MAP_HEIGHT * MAP_WIDTH), sizeof(uint8_t));
+	
+	uint8_t fMapCopy[] =
+		{
+			W,W,W,W,W,W,W,W,W,W,W,W,
+			W,O,O,O,O,O,O,O,O,O,O,W,
+			W,O,O,O,O,O,O,O,O,O,O,W,
+			W,O,O,O,O,O,O,O,W,O,O,W,
+			W,O,O,W,O,W,O,O,W,O,O,W,
+			W,O,O,W,O,W,W,O,W,O,O,W,
+			W,O,O,W,O,O,W,O,W,O,O,W,
+			W,O,O,O,W,O,W,O,W,O,O,W,
+			W,O,O,O,W,O,W,O,W,O,O,W,
+			W,O,O,O,W,W,W,O,W,O,O,W,
+			W,O,O,O,O,O,O,O,O,O,O,W,
+			W,W,W,W,W,W,W,W,W,W,W,W
+		};
+		
+	for (i=0; i < (MAP_HEIGHT * MAP_WIDTH); i++)
+		fMap[i] = fMapCopy[i];
 }
 
   //*******************************************************************//
