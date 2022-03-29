@@ -2,6 +2,7 @@
 #define _USBKEYBOARD_H
 
 #include <libusb-1.0/libusb.h>
+#include <stdbool.h>
 
 #define USB_HID_KEYBOARD_PROTOCOL 1
 
@@ -28,6 +29,7 @@ extern struct libusb_device_handle *openkeyboard(uint8_t *);
 
 extern char get_char_from_keystate(struct usb_keyboard_packet *);
 extern char get_gameplay_key(uint8_t);
+extern bool is_key_pressed(uint8_t, uint8_t[6]);
 
 extern uint8_t get_last_keycode(uint8_t[6]);
 extern int get_last_keycode_pos(uint8_t[6]);

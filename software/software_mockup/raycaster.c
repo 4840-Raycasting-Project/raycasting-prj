@@ -41,6 +41,8 @@ TODO:
 #define ANGLE5 (ANGLE30/6)
 #define ANGLE10 (ANGLE5*2)
 
+#define COLUMN_RESOLUTION 5
+
 // precomputed trigonometric tables
 float fSinTable[ANGLE360+1];
 float fISinTable[ANGLE360+1];
@@ -58,7 +60,7 @@ int fPlayerY = 160;
 int fPlayerArc = ANGLE0;
 int fPlayerDistanceToTheProjectionPlane = 277;
 int fPlayerHeight = 32;
-int fPlayerSpeed = 16;
+int fPlayerSpeed = 8;
 int fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
 
 // movement flag
@@ -84,99 +86,109 @@ void create_tables();
 float arc_to_rad(float);
 void handle_key_press(struct usb_keyboard_packet *, bool);
 
+bool up_pressed, down_pressed, left_pressed, right_pressed;
+
+pthread_t keyboard_thread;
+void *keyboard_thread_f(void *);
+
 int main() {
 
-    int transferred;
-
-    struct usb_keyboard_packet packet, last_packet;
-    last_packet.modifiers = -1; //"uninitizalized" state
-
+    
     fbopen();
     fb_clear_screen();
 
     create_tables();
 
     /* Open the keyboard */
-    if ( (keyboard = openkeyboard(&endpoint_address)) == NULL ) {
+    if ((keyboard = openkeyboard(&endpoint_address)) == NULL) {
         fprintf(stderr, "Did not find a keyboard\n");
         exit(1);
     }
+	
+	//start keyboard thread
+	pthread_create(&keyboard_thread, NULL, keyboard_thread_f, NULL);
+	
+	render();
 
     while(true) {
-        
-        //TODO refactor into "is key pressed"
 
-        libusb_interrupt_transfer(keyboard, endpoint_address,
+		//uint8_t keycode = get_last_keycode(packet.keycode);
+		//char gameplay_key = get_gameplay_key(keycode);
+
+		// rotate left
+		if(left_pressed) {
+			if((fPlayerArc -= ANGLE5) < ANGLE0)
+				fPlayerArc += ANGLE360;
+		}
+		
+		// rotate right
+		else if(right_pressed) {
+			if((fPlayerArc += ANGLE5) >= ANGLE360)
+				fPlayerArc -= ANGLE360;
+		}
+
+			//  _____     _
+			// |\ arc     |
+			// |  \       y
+			// |    \     |
+		//            -
+			// |--x--|  
+			//
+			//  sin(arc)=y/diagonal
+			//  cos(arc)=x/diagonal   where diagonal=speed
+		float playerXDir = fCosTable[fPlayerArc];
+		float playerYDir = fSinTable[fPlayerArc];
+
+		// move forward
+		if(up_pressed) {
+			fPlayerX += (int)(playerXDir * fPlayerSpeed);
+			fPlayerY += (int)(playerYDir * fPlayerSpeed);
+		}
+		
+		// move backward
+		else if(down_pressed) {
+			fPlayerX -= (int)(playerXDir*fPlayerSpeed);
+			fPlayerY -= (int)(playerYDir*fPlayerSpeed);
+		}
+		
+		//TODO only call if position changed
+		render();
+		
+		usleep(20000);
+    }
+
+    fb_clear_screen(); 
+	
+	free(fMap);
+	
+	pthread_cancel(keyboard_thread);
+    pthread_join(keyboard_thread, NULL);
+
+    return 0;
+}
+
+void *keyboard_thread_f(void *ignored) {
+	
+	int transferred;
+	
+	struct usb_keyboard_packet packet;
+	
+	while(true) {
+		
+		libusb_interrupt_transfer(keyboard, endpoint_address,
 			      (unsigned char *) &packet, sizeof(packet),
 			      &transferred, 0);
 
         if (transferred == sizeof(packet)) {
-                
-            uint8_t keycode = get_last_keycode(packet.keycode);
-            
-            //ignore duplicate keypress
-            if(last_packet.modifiers != -1 && 
-                (last_packet.keycode[get_last_keycode_pos(packet.keycode)] == keycode || keycode == get_last_keycode(last_packet.keycode))) {
-                    
-                if(last_packet.keycode[get_last_keycode_pos(packet.keycode)] == keycode) {
-                    //pthread_cancel(repeat_key_thread);
-                    //pthread_join(repeat_key_thread, NULL);
-                }
-                
-                last_packet = packet;
-                continue;
-            }
-            
-            last_packet = packet;
-            
-            if(!keycode)
-                continue;
-            
-            char gameplay_key = get_gameplay_key(keycode);
-
-            // rotate left
-            if(gameplay_key == 'L') {
-                if((fPlayerArc -= ANGLE10) < ANGLE0)
-                    fPlayerArc += ANGLE360;
-            }
-            
-            // rotate right
-            else if(gameplay_key == 'R') {
-                if((fPlayerArc += ANGLE10) >= ANGLE360)
-                    fPlayerArc -= ANGLE360;
-            }
-
-                //  _____     _
-                // |\ arc     |
-                // |  \       y
-                // |    \     |
-            //            -
-                // |--x--|  
-                //
-                //  sin(arc)=y/diagonal
-                //  cos(arc)=x/diagonal   where diagonal=speed
-            float playerXDir = fCosTable[fPlayerArc];
-            float playerYDir = fSinTable[fPlayerArc];
-
-            // move forward
-            if(gameplay_key == 'U') {
-                fPlayerX += (int)(playerXDir * fPlayerSpeed);
-                fPlayerY += (int)(playerYDir * fPlayerSpeed);
-            }
-            
-            // move backward
-            else if(gameplay_key == 'D') {
-                fPlayerX-=(int)(playerXDir*fPlayerSpeed);
-                fPlayerY-=(int)(playerYDir*fPlayerSpeed);
-            }
-
-            render();
-        }
-    }
-
-    fb_clear_screen(); 
-
-    return 0;
+			
+			up_pressed = is_key_pressed(0x52, packet.keycode);
+			down_pressed = is_key_pressed(0x51, packet.keycode);
+			left_pressed = is_key_pressed(0x50, packet.keycode);
+			right_pressed = is_key_pressed(0x4F, packet.keycode);
+		}
+	}
+  
+	return NULL;
 }
 
 void render() {
@@ -213,7 +225,7 @@ void render() {
     if (castArc < 0)
         castArc = ANGLE360 + castArc;
 
-    for (castColumn=0; castColumn < PROJECTIONPLANEWIDTH; castColumn += 5) {
+    for (castColumn=0; castColumn < PROJECTIONPLANEWIDTH; castColumn += COLUMN_RESOLUTION) {
         
         // ray is between 0 to 180 degree (1st and 2nd quadrant)
         // ray is facing down
@@ -369,10 +381,10 @@ void render() {
         //fOffscreenGraphics.drawLine(castColumn, topOfWall, castColumn, bottomOfWall);
        // fOffscreenGraphics.fillRect(castColumn, topOfWall, 5, projectedWallHeight);
         
-        fb_draw_column(castColumn, topOfWall, 5, projectedWallHeight);
+        fb_draw_column(castColumn, topOfWall, COLUMN_RESOLUTION, projectedWallHeight);
 
         // TRACE THE NEXT RAY
-        castArc += 5;
+        castArc += COLUMN_RESOLUTION;
         if (castArc >= ANGLE360)
             castArc -= ANGLE360;
     }

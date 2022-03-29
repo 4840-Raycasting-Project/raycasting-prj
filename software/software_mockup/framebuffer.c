@@ -89,6 +89,9 @@ void fb_draw_column(int column_num, int top_of_wall, int width, int projected_wa
     int floor_color = 10;
     int wall_color = 255;
     int ceiling_color = 50;
+	
+	width = (column_num + width) < max_cols ? width
+		: max_cols - column_num;
 
     for(int cur_row=0; cur_row < max_rows; cur_row++) {
 

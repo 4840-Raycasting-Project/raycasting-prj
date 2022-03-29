@@ -123,6 +123,20 @@ char get_char_from_keystate(struct usb_keyboard_packet *packet) {
 	return ascii_char;
 }
 
+bool is_key_pressed(uint8_t key, uint8_t keycode[6]) {
+	
+	if(!*keycode)
+		return 0;
+	
+	for(int i=0; i<6; i++) {
+		
+		if(keycode[i] == key)
+			return true;
+	}
+	
+	return false;
+}
+
 char get_gameplay_key(uint8_t keycode) {
 	
     switch(keycode) {
