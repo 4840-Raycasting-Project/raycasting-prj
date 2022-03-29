@@ -2,9 +2,9 @@
 Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
 TODO:
-0. keyboard
-1. Collision detection
-2. Texture mapping
+
+1. Texture mapping
+2. Collision detection
 3. Bit shift operations for speedup
 4. Other speedup optimizations
 5. fogging / transparency effect to show distance in z axis
