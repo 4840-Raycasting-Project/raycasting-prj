@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdbool.h> 
 #include <unistd.h>
+#include <stdint.h>
 
 #include <linux/fb.h>
 
@@ -81,8 +82,8 @@ void fb_clear_screen() {
 	memset(framebuffer, 0, fb_finfo.smem_len);
 }
 
-
-void fb_draw_column(int column_num, int top_of_wall, int width, int projected_wall_height) {
+//wall_direction: 0=x, 1=y
+void fb_draw_column(int column_num, int top_of_wall, int width, int projected_wall_height, uint8_t wall_side) {
 
 	//printf("%d %d %d %d", column_num, top_of_wall, width, projected_wall_height);
 
@@ -90,14 +91,23 @@ void fb_draw_column(int column_num, int top_of_wall, int width, int projected_wa
     int wall_color = 255;
     int ceiling_color = 50;
 	
+	bool is_wall, is_ceiling, is_floor;
+	
 	width = (column_num + width) < max_cols ? width
 		: max_cols - column_num;
 
     for(int cur_row=0; cur_row < max_rows; cur_row++) {
-
-        int color = cur_row < top_of_wall ? ceiling_color
-            : cur_row > (top_of_wall + projected_wall_height) ? floor_color
+		
+		is_ceiling = cur_row < top_of_wall;
+		is_floor = cur_row > (top_of_wall + projected_wall_height);
+		is_wall = !is_ceiling && !is_floor;
+		
+        int color = is_ceiling ? ceiling_color
+            : is_floor ? floor_color
             : wall_color;
+			
+		if(is_wall && !wall_side)
+			color -= 25;
 
         unsigned char *start_pos = framebuffer + (max_cols * cur_row * 4)
             + (column_num * 4);

@@ -12,6 +12,7 @@ TODO:
 6. Thread to update the future hardware
 7. usb controller input?
 8. sprites?
+9. Floor / ceiling color gradients
 
 */
 
@@ -41,7 +42,7 @@ TODO:
 #define ANGLE5 (ANGLE30/6)
 #define ANGLE10 (ANGLE5*2)
 
-#define COLUMN_RESOLUTION 5
+#define COLUMN_WIDTH 5
 
 // precomputed trigonometric tables
 float fSinTable[ANGLE360+1];
@@ -222,14 +223,14 @@ void render() {
         // we will trace the rays starting from the leftmost ray
     castArc -= ANGLE30;
         // wrap around if necessary
-    if (castArc < 0)
+    if(castArc < 0)
         castArc = ANGLE360 + castArc;
 
-    for (castColumn=0; castColumn < PROJECTIONPLANEWIDTH; castColumn += COLUMN_RESOLUTION) {
+    for(castColumn=0; castColumn < PROJECTIONPLANEWIDTH; castColumn += COLUMN_WIDTH) {
         
         // ray is between 0 to 180 degree (1st and 2nd quadrant)
         // ray is facing down
-        if (castArc > ANGLE0 && castArc < ANGLE180) {
+        if(castArc > ANGLE0 && castArc < ANGLE180) {
                 // truncuate then add to get the coordinate of the FIRST grid (horizontal
                 // wall) that is in front of the player (this is in pixel unit)
                 // ROUND DOWN
@@ -260,20 +261,20 @@ void render() {
         }
         
         // LOOK FOR HORIZONTAL WALL
-        if (castArc == ANGLE0 || castArc == ANGLE180)
+        if(castArc == ANGLE0 || castArc == ANGLE180)
             distToHorizontalGridBeingHit=__FLT_MAX__;//Float.MAX_VALUE;
         
         // else, move the ray until it hits a horizontal wall
         else {
             distToNextXIntersection = fXStepTable[castArc];
 
-            while (true) {
+            while(true) {
 
                 xGridIndex = (int)(xIntersection / TILE_SIZE);
                 // in the picture, yGridIndex will be 1
                 yGridIndex = (horizontalGrid / TILE_SIZE);
 
-                if ((xGridIndex >= MAP_WIDTH) ||
+                if((xGridIndex >= MAP_WIDTH) ||
                     (yGridIndex >= MAP_HEIGHT) ||
                     xGridIndex < 0 || yGridIndex < 0) {
 
@@ -293,7 +294,7 @@ void render() {
         }
 
         // FOLLOW X RAY
-        if (castArc < ANGLE90 || castArc > ANGLE270) {
+        if(castArc < ANGLE90 || castArc > ANGLE270) {
 
             verticalGrid = TILE_SIZE + (fPlayerX / TILE_SIZE) * TILE_SIZE;
             distToNextVerticalGrid = TILE_SIZE;
@@ -314,14 +315,14 @@ void render() {
         }
         
         // LOOK FOR VERTICAL WALL
-        if (castArc == ANGLE90 || castArc == ANGLE270) 
-            distToVerticalGridBeingHit = __FLT_MAX__;//Float.MAX_VALUE;
+        if(castArc == ANGLE90 || castArc == ANGLE270) 
+            distToVerticalGridBeingHit = __FLT_MAX__;
         
         else {
             
             distToNextYIntersection = fYStepTable[castArc];
         
-            while (true) {
+            while(true) {
                 // compute current map position to inspect
                 xGridIndex = (verticalGrid / TILE_SIZE);
                 yGridIndex = (int)(yIntersection / TILE_SIZE);
@@ -350,6 +351,8 @@ void render() {
         float dist;
         int topOfWall;   // used to compute the top and bottom of the sliver that
         int bottomOfWall;   // will be the staring point of floor and ceiling
+		uint8_t wall_side; //0=x, 1=y
+		
             // determine which ray strikes a closer wall.
             // if yray distance to the wall is closer, the yDistance will be shorter than
                 // the xDistance
@@ -358,6 +361,7 @@ void render() {
             // the next function call (drawRayOnMap()) is not a part of raycating rendering part, 
             // it just draws the ray on the overhead map to illustrate the raycasting process
             dist = distToHorizontalGridBeingHit;
+			wall_side = 0;
         }
         // else, we use xray instead (meaning the vertical wall is closer than
         //   the horizontal wall)
@@ -366,6 +370,7 @@ void render() {
             // the next function call (drawRayOnMap()) is not a part of raycating rendering part, 
             // it just draws the ray on the overhead map to illustrate the raycasting process
             dist = distToVerticalGridBeingHit;
+			wall_side = 1;
         }
 
         // correct distance (compensate for the fishbown effect)
@@ -377,14 +382,11 @@ void render() {
 
         if(bottomOfWall >= PROJECTIONPLANEHEIGHT)
             bottomOfWall = PROJECTIONPLANEHEIGHT - 1;
-
-        //fOffscreenGraphics.drawLine(castColumn, topOfWall, castColumn, bottomOfWall);
-       // fOffscreenGraphics.fillRect(castColumn, topOfWall, 5, projectedWallHeight);
         
-        fb_draw_column(castColumn, topOfWall, COLUMN_RESOLUTION, projectedWallHeight);
+        fb_draw_column(castColumn, topOfWall, COLUMN_WIDTH, projectedWallHeight, wall_side);
 
         // TRACE THE NEXT RAY
-        castArc += COLUMN_RESOLUTION;
+        castArc += COLUMN_WIDTH;
         if (castArc >= ANGLE360)
             castArc -= ANGLE360;
     }

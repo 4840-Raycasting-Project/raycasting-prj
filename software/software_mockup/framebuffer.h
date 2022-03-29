@@ -1,6 +1,10 @@
 #ifndef _FRAMEBUFFER_H
 #  define _FRAMEBUFFER_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
+
 #define FBOPEN_DEV -1          /* Couldn't open the device */
 #define FBOPEN_FSCREENINFO -2  /* Couldn't read the fixed info */
 #define FBOPEN_VSCREENINFO -3  /* Couldn't read the variable info */
@@ -9,7 +13,7 @@
 
 extern int fbopen(void);
 extern void fb_clear_screen();
-extern void fb_draw_column(int, int, int, int);
+extern void fb_draw_column(int, int, int, int, uint8_t);
 extern void fbputchar(char, int, int);
 extern void fbputs(const char *, int, int);
 
