@@ -27,6 +27,7 @@ struct usb_keyboard_packet {
 extern struct libusb_device_handle *openkeyboard(uint8_t *);
 
 extern char get_char_from_keystate(struct usb_keyboard_packet *);
+extern char get_gameplay_key(uint8_t);
 
 extern uint8_t get_last_keycode(uint8_t[6]);
 extern int get_last_keycode_pos(uint8_t[6]);

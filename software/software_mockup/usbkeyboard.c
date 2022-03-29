@@ -123,6 +123,26 @@ char get_char_from_keystate(struct usb_keyboard_packet *packet) {
 	return ascii_char;
 }
 
+char get_gameplay_key(uint8_t keycode) {
+	
+    switch(keycode) {
+
+        case 0x4F:
+            return 'R';
+
+        case 0x50:
+            return 'L';
+
+        case 0x51:
+            return 'D';
+
+        case 0x52:
+            return 'U';
+    }
+
+	return '\0';
+}
+
 int get_last_keycode_pos(uint8_t keycode[6]) {
 	
 	if(!*keycode)

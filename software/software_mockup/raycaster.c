@@ -9,7 +9,7 @@ TODO:
 4. Other speedup optimizations
 5. fogging / transparency effect to show distance in z axis
 
-6. Threaded update the future hardware
+6. Thread to update the future hardware
 7. usb controller input?
 8. sprites?
 
@@ -75,20 +75,106 @@ static const uint8_t MAP_HEIGHT = 12;
 
 uint8_t *fMap;
 
+struct libusb_device_handle *keyboard;
+uint8_t endpoint_address;
+
 //function signatures
 void render();
 void create_tables();
 float arc_to_rad(float);
-
+void handle_key_press(struct usb_keyboard_packet *, bool);
 
 int main() {
+
+    int transferred;
+
+    struct usb_keyboard_packet packet, last_packet;
+    last_packet.modifiers = -1; //"uninitizalized" state
 
     fbopen();
     fb_clear_screen();
 
     create_tables();
 
-    render();
+    /* Open the keyboard */
+    if ( (keyboard = openkeyboard(&endpoint_address)) == NULL ) {
+        fprintf(stderr, "Did not find a keyboard\n");
+        exit(1);
+    }
+
+    while(true) {
+        
+        //TODO refactor into "is key pressed"
+
+        libusb_interrupt_transfer(keyboard, endpoint_address,
+			      (unsigned char *) &packet, sizeof(packet),
+			      &transferred, 0);
+
+        if (transferred == sizeof(packet)) {
+                
+            uint8_t keycode = get_last_keycode(packet.keycode);
+            
+            //ignore duplicate keypress
+            if(last_packet.modifiers != -1 && 
+                (last_packet.keycode[get_last_keycode_pos(packet.keycode)] == keycode || keycode == get_last_keycode(last_packet.keycode))) {
+                    
+                if(last_packet.keycode[get_last_keycode_pos(packet.keycode)] == keycode) {
+                    //pthread_cancel(repeat_key_thread);
+                    //pthread_join(repeat_key_thread, NULL);
+                }
+                
+                last_packet = packet;
+                continue;
+            }
+            
+            last_packet = packet;
+            
+            if(!keycode)
+                continue;
+            
+            char gameplay_key = get_gameplay_key(keycode);
+
+            // rotate left
+            if(gameplay_key == 'L') {
+                if((fPlayerArc -= ANGLE10) < ANGLE0)
+                    fPlayerArc += ANGLE360;
+            }
+            
+            // rotate right
+            else if(gameplay_key == 'R') {
+                if((fPlayerArc += ANGLE10) >= ANGLE360)
+                    fPlayerArc -= ANGLE360;
+            }
+
+                //  _____     _
+                // |\ arc     |
+                // |  \       y
+                // |    \     |
+            //            -
+                // |--x--|  
+                //
+                //  sin(arc)=y/diagonal
+                //  cos(arc)=x/diagonal   where diagonal=speed
+            float playerXDir = fCosTable[fPlayerArc];
+            float playerYDir = fSinTable[fPlayerArc];
+
+            // move forward
+            if(gameplay_key == 'U') {
+                fPlayerX += (int)(playerXDir * fPlayerSpeed);
+                fPlayerY += (int)(playerYDir * fPlayerSpeed);
+            }
+            
+            // move backward
+            else if(gameplay_key == 'D') {
+                fPlayerX-=(int)(playerXDir*fPlayerSpeed);
+                fPlayerY-=(int)(playerYDir*fPlayerSpeed);
+            }
+
+            render();
+        }
+    }
+
+    fb_clear_screen(); 
 
     return 0;
 }
