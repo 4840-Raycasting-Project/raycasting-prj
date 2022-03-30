@@ -81,6 +81,10 @@ uint8_t *fMap;
 struct libusb_device_handle *keyboard;
 uint8_t endpoint_address;
 
+pthread_mutex_t kp_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t kp_cond = PTHERAD_COND_INITIALIZER;
+
+
 //function signatures
 void render();
 void create_tables();
@@ -116,6 +120,11 @@ int main() {
 
 		//uint8_t keycode = get_last_keycode(packet.keycode);
 		//char gameplay_key = get_gameplay_key(keycode);
+
+		pthread_mutex_lock(&kp_mutex);
+		while(!up_pressed && !down_pressed && !left_pressed && !right_pressed){		
+			pthread_cond_wait(&kp_cond,&kp_mutex);
+		}
 
 		// rotate left
 		if(left_pressed) {
@@ -171,6 +180,8 @@ int main() {
 			}
 		}
 		
+		pthread_mutex_unlock(&kp_mutex);
+
 		//TODO only call if position changed
 		render();
 		
@@ -201,10 +212,15 @@ void *keyboard_thread_f(void *ignored) {
 
         if (transferred == sizeof(packet)) {
 			
+			pthread_mutex_lock(&kp_mutex);
+
 			up_pressed = is_key_pressed(0x52, packet.keycode);
 			down_pressed = is_key_pressed(0x51, packet.keycode);
 			left_pressed = is_key_pressed(0x50, packet.keycode);
 			right_pressed = is_key_pressed(0x4F, packet.keycode);
+
+			pthread_cond_signal(&kp_cond);
+			pthread_mutex_unlock(&kp_mutex);
 		}
 	}
   
