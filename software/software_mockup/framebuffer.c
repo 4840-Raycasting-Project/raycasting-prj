@@ -112,16 +112,16 @@ void fb_draw_column(int column_num, int top_of_wall, int column_width, int proje
 			int relative_wall_row = (cur_row - top_of_wall) * 64 / projected_wall_height;	
 			int texture_start_pos = (relative_wall_row * 64 * 4) + (offset * 4);
 			
-			for(int i=0; i<column_width; i++) {
+			memcpy(rgb_vals, &(greystone_map[texture_start_pos]), 4);
 				
-				memcpy(rgb_vals, &(greystone_map[texture_start_pos]), 4);
-				
-				//decrease brightness by half if light source not reflecting
-				if(!wall_side) {
+			//decrease brightness by half if light source not reflecting
+			if(!wall_side) {
 					
-					for(int j=0; j<4; j++)
-						rgb_vals[j] = rgb_vals[j] >> 1;
-				}
+				for(int j=0; j<4; j++)
+					rgb_vals[j] = rgb_vals[j] >> 1;
+			}
+			
+			for(int i=0; i<column_width; i++) {
 				
 				memcpy(fb_start_pos, rgb_vals, 4);
 				
