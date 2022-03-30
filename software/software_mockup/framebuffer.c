@@ -10,6 +10,7 @@
  */
 
 #include "framebuffer.h"
+#include "textures.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -22,6 +23,7 @@
 #include <stdbool.h> 
 #include <unistd.h>
 #include <stdint.h>
+
 
 #include <linux/fb.h>
 
@@ -77,42 +79,60 @@ int fbopen() {
  */
 void fb_clear_screen() {
 	
-	//printf("%d %d",max_rows, max_cols);
-	
 	memset(framebuffer, 0, fb_finfo.smem_len);
 }
 
-//wall_direction: 0=x, 1=y
-void fb_draw_column(int column_num, int top_of_wall, int width, int projected_wall_height, uint8_t wall_side) {
-
-	//printf("%d %d %d %d", column_num, top_of_wall, width, projected_wall_height);
-
+//wall_side: 0=x, 1=y
+void fb_draw_column(int column_num, int top_of_wall, int column_width, int projected_wall_height, uint8_t wall_side, uint8_t offset) {
+	
     int floor_color = 10;
-    int wall_color = 255;
     int ceiling_color = 50;
+	
+	uint8_t rgb_val;
+	uint8_t rgb_vals[4];
 	
 	bool is_wall, is_ceiling, is_floor;
 	
-	width = (column_num + width) < max_cols ? width
+	//if last column is not a multiple of column width, truncate it
+	column_width = (column_num + column_width) < max_cols ? column_width
 		: max_cols - column_num;
+		
 
     for(int cur_row=0; cur_row < max_rows; cur_row++) {
+		
+		unsigned char *fb_start_pos = framebuffer + (max_cols * cur_row * 4)
+            + (column_num * 4);
 		
 		is_ceiling = cur_row < top_of_wall;
 		is_floor = cur_row > (top_of_wall + projected_wall_height);
 		is_wall = !is_ceiling && !is_floor;
-		
-        int color = is_ceiling ? ceiling_color
-            : is_floor ? floor_color
-            : wall_color;
 			
-		if(is_wall && !wall_side)
-			color -= 25;
-
-        unsigned char *start_pos = framebuffer + (max_cols * cur_row * 4)
-            + (column_num * 4);
-
-       memset(start_pos, color, width * 4);
+		if(is_wall) {
+			
+			int relative_wall_row = (cur_row - top_of_wall) * 64 / projected_wall_height;	
+			int texture_start_pos = (relative_wall_row * 64 * 4) + (offset * 4);
+			
+			for(int i=0; i<column_width; i++) {
+				
+				memcpy(rgb_vals, &(greystone_map[texture_start_pos]), 4);
+				
+				//decrease brightness by half if light source not reflecting
+				if(!wall_side) {
+					
+					for(int j=0; j<4; j++)
+						rgb_vals[j] = rgb_vals[j] >> 1;
+				}
+				
+				memcpy(fb_start_pos, rgb_vals, 4);
+				
+				fb_start_pos += 4;
+			}
+		}
+		else {
+		
+			rgb_val = is_ceiling ? ceiling_color : floor_color;
+			memset(fb_start_pos, rgb_val, column_width * 4);
+		}
     }
 }
 

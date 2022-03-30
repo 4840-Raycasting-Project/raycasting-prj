@@ -4,15 +4,14 @@ Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 TODO:
 
 1. Texture mapping
-2. Collision detection
+
 3. Bit shift operations for speedup
 4. Other speedup optimizations
-5. fogging / transparency effect to show distance in z axis
 
 6. Thread to update the future hardware
 7. usb controller input?
 8. sprites?
-9. Floor / ceiling color gradients
+9. Floor / ceiling color gradients or (texture -> harder)
 
 */
 
@@ -26,7 +25,7 @@ TODO:
 #include <stdbool.h> 
 #include <math.h>
 
-// size of tile (wall height)
+// size of tile (wall height) - best to make some power of 2
 #define TILE_SIZE 64
 #define WALL_HEIGHT 64
 #define PROJECTIONPLANEWIDTH 1024
@@ -42,7 +41,8 @@ TODO:
 #define ANGLE5 (ANGLE30/6)
 #define ANGLE10 (ANGLE5*2)
 
-#define COLUMN_WIDTH 5
+//best to make this some power of 2
+#define COLUMN_WIDTH 4
 
 // precomputed trigonometric tables
 float fSinTable[ANGLE360+1];
@@ -56,8 +56,8 @@ float fXStepTable[ANGLE360+1];
 float fYStepTable[ANGLE360+1];
 
 // player's attributes
-int fPlayerX = 100;
-int fPlayerY = 160;
+int fPlayerX = 100; int tmpPlayerX;
+int fPlayerY = 160; int tmpPlayerY;
 int fPlayerArc = ANGLE0;
 int fPlayerDistanceToTheProjectionPlane = 277;
 int fPlayerHeight = 32;
@@ -93,7 +93,6 @@ pthread_t keyboard_thread;
 void *keyboard_thread_f(void *);
 
 int main() {
-
     
     fbopen();
     fb_clear_screen();
@@ -110,6 +109,8 @@ int main() {
 	pthread_create(&keyboard_thread, NULL, keyboard_thread_f, NULL);
 	
 	render();
+	
+	int map_size = MAP_HEIGHT * MAP_WIDTH;
 
     while(true) {
 
@@ -142,14 +143,32 @@ int main() {
 
 		// move forward
 		if(up_pressed) {
-			fPlayerX += (int)(playerXDir * fPlayerSpeed);
-			fPlayerY += (int)(playerYDir * fPlayerSpeed);
+			
+			tmpPlayerX = fPlayerX + (int)(playerXDir * fPlayerSpeed);
+			tmpPlayerY = fPlayerY + (int)(playerYDir * fPlayerSpeed);
+			
+			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
+
+			if(map_index < map_size && fMap[map_index] != W) {
+				
+				fPlayerX = tmpPlayerX;
+				fPlayerY = tmpPlayerY;
+			}
 		}
 		
 		// move backward
 		else if(down_pressed) {
-			fPlayerX -= (int)(playerXDir*fPlayerSpeed);
-			fPlayerY -= (int)(playerYDir*fPlayerSpeed);
+			
+			tmpPlayerX = fPlayerX - (int)(playerXDir * fPlayerSpeed);
+			tmpPlayerY = fPlayerY - (int)(playerYDir * fPlayerSpeed);
+			
+			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
+			
+			if(map_index < map_size && fMap[map_index] != W) {
+				
+				fPlayerX = tmpPlayerX;
+				fPlayerY = tmpPlayerY;
+			}
 		}
 		
 		//TODO only call if position changed
@@ -234,12 +253,12 @@ void render() {
                 // truncuate then add to get the coordinate of the FIRST grid (horizontal
                 // wall) that is in front of the player (this is in pixel unit)
                 // ROUND DOWN
-            horizontalGrid = (fPlayerY / TILE_SIZE) * TILE_SIZE  + TILE_SIZE;
+            horizontalGrid = (fPlayerY / TILE_SIZE) * TILE_SIZE + TILE_SIZE;
 
             // compute distance to the next horizontal wall
             distToNextHorizontalGrid = TILE_SIZE;
 
-            float xtemp = fITanTable[castArc] * (horizontalGrid-fPlayerY);
+            float xtemp = fITanTable[castArc] * (horizontalGrid - fPlayerY);
                     // we can get the vertical distance to that wall by
                     // (horizontalGrid-GLplayerY)
                     // we can get the horizontal distance to that wall by
@@ -352,6 +371,7 @@ void render() {
         int topOfWall;   // used to compute the top and bottom of the sliver that
         int bottomOfWall;   // will be the staring point of floor and ceiling
 		uint8_t wall_side; //0=x, 1=y
+		uint8_t offset;
 		
             // determine which ray strikes a closer wall.
             // if yray distance to the wall is closer, the yDistance will be shorter than
@@ -362,15 +382,17 @@ void render() {
             // it just draws the ray on the overhead map to illustrate the raycasting process
             dist = distToHorizontalGridBeingHit;
 			wall_side = 0;
+			offset = (int)xIntersection % TILE_SIZE;
         }
         // else, we use xray instead (meaning the vertical wall is closer than
         //   the horizontal wall)
         else {
             
-            // the next function call (drawRayOnMap()) is not a part of raycating rendering part, 
+            // the next function call (drawRayOnMap()) is not a part of raycasting rendering part, 
             // it just draws the ray on the overhead map to illustrate the raycasting process
             dist = distToVerticalGridBeingHit;
 			wall_side = 1;
+			offset = (int)yIntersection % TILE_SIZE;
         }
 
         // correct distance (compensate for the fishbown effect)
@@ -383,7 +405,7 @@ void render() {
         if(bottomOfWall >= PROJECTIONPLANEHEIGHT)
             bottomOfWall = PROJECTIONPLANEHEIGHT - 1;
         
-        fb_draw_column(castColumn, topOfWall, COLUMN_WIDTH, projectedWallHeight, wall_side);
+        fb_draw_column(castColumn, topOfWall, COLUMN_WIDTH, projectedWallHeight, wall_side, offset);
 
         // TRACE THE NEXT RAY
         castArc += COLUMN_WIDTH;
