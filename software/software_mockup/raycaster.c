@@ -82,7 +82,7 @@ struct libusb_device_handle *keyboard;
 uint8_t endpoint_address;
 
 pthread_mutex_t kp_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t kp_cond = PTHERAD_COND_INITIALIZER;
+pthread_cond_t kp_cond = PTHREAD_COND_INITIALIZER;
 
 
 //function signatures
