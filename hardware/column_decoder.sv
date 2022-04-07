@@ -19,38 +19,29 @@ module column_decoder(input logic        clk,
    logic [10:0]	   hcount;
    logic [9:0]     vcount;
 
+   logic[9:0]      cur_column_to_write;
+   logic           cur_column_write_stage; //1st or second stage of writing per column
+
    vga_counters counters(.clk50(clk), .*);
-/*
+
    always_ff @(posedge clk)
 
      if (reset) begin
 
-      background_r <= 8'h0;
-      background_g <= 8'h0;
-      background_b <= 8'h80;
+      cur_column_to_write <= 10'h0;
+      cur_column_write_stage <= 1'h0;
+
      end else if (chipselect && write)
 
-       case (address)
+       case (cur_column_write_stage)
 
-        4'h0 : background_r <= writedata[7:0]; 
-        4'h1 : background_g <= writedata[7:0];
-        4'h2 : background_b <= writedata[7:0];
+        1'h0 : background_r <= writedata[7:0]; 
+        1'h1 : background_g <= writedata[7:0];
         
-        4'h3 : ball_pos_x <= writedata[9:0];
-        4'h4 : ball_pos_y <= writedata[9:0];
-
-        4'h5 : ball_radius <= writedata[9:0];
-
-        4'h6 : ball_color_r <= writedata[7:0]; 
-        4'h7 : ball_color_g <= writedata[7:0];
-        4'h8 : ball_color_b <= writedata[7:0];
-
        endcase
 
      end
-   */  
-    //using classic math formula of (x-xc)^2 + (y-yc)^2 < r^2
-    //other ideas: first establish bounding box
+
     always_comb begin
 
 
@@ -59,14 +50,36 @@ module column_decoder(input logic        clk,
 
         if (!VGA_BLANK_n) //seems wrong
           {VGA_R, VGA_G, VGA_B} = {8'h0, 8'h0, 8'h0};
-        /*else if(xy_squared_sum < r_squared)
-          {VGA_R, VGA_G, VGA_B} = {ball_color_r, ball_color_g, ball_color_b};
-        else
-          {VGA_R, VGA_G, VGA_B} = {background_r, background_g, background_b};
-          */
+
     end
 
 endmodule
+
+
+module columns(
+
+    //should be able to write to array of 28 bit vals
+    //can take in 5x attributes and concatenate them + col num
+);
+
+
+endmodule
+
+
+module texture(
+
+//should be able to write to array of 8 bit values
+//64x64x8 vals
+
+//can take in texture num, row, col + write / output val
+
+);
+
+
+endmodule
+
+
+
 
 module vga_counters(
  input logic 	     clk50, reset,
