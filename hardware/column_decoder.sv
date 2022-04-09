@@ -120,17 +120,20 @@ endmodule
 
 module textures(
     input logic texture_type [2:0],
-    input logic row [8:0],
-    input logic col [9:0],
+    input logic row [5:0],
+    input logic col [5:0],
     output logic texture_data [23:0]
 );
 
-    logic textures [27:0] col_num [9:0] texture_index [2:0];
+    logic textures [27:0] col_num [5:0] row_num [5:0] texture_index [2:0];
 
-    //TODO somehow initialize all the textures right off the bat from another file
+    initial begin
+        $display("Loading texures.");
+        $readmemh("textures.mem", textures);
+    end
 
     always_comb begin
-        texture_data = columns[colnum][texture_type];
+        texture_data = columns[col][row][texture_type];
     end
 
 endmodule
