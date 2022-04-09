@@ -16,13 +16,33 @@ module column_decoder(input logic        clk,
 		                   VGA_BLANK_n,
 		output logic 	   VGA_SYNC_n);
 
-   logic [10:0]	   hcount;
-   logic [9:0]     vcount;
+    logic [10:0]	   hcount;
+    logic [9:0]     vcount;
 
-   logic[9:0]      cur_column_to_write;
-   logic           cur_column_write_stage; //1st or second stage of writing per column
+    logic [9:0]      cur_column_to_write;
+    logic           cur_column_write_stage; //1st or second stage of writing per column
+    logic [12:0]     cur_column_first_write_stage;
 
-   vga_counters counters(.clk50(clk), .*);
+    logic [2:0] texture_type_select;
+    logic [8:0] texture_row_select;
+    logic [9:0] texture_col_select;
+    logic [23:0] cur_texture_rgb_vals;
+    
+    logic colnum [9:0] which_column [1:0];
+    logic new_coldata [27:0] which_column [1:0];
+    logic col_data [27:0] which_column [1:0];
+
+    columns columns0(clk, reset, write, colnum[0], new_coldata[0], coldata[0]),
+            columns1(clk, reset, write, colnum[1], new_coldata[1], coldata[1]),
+            columns2(clk, reset, write, colnum[2], new_coldata[2], coldata[2]);
+
+    textures textures0 (texture_type_select, 
+        texture_row_select, 
+        texture_col_select, 
+        cur_texture_rgb_vals
+    );
+
+    vga_counters counters(.clk50(clk), .*);
 
    always_ff @(posedge clk)
 
@@ -33,7 +53,18 @@ module column_decoder(input logic        clk,
 
      end else if (chipselect && write)
 
-       case (cur_column_write_stage)
+       if(writedata == 16'b1111_1111_1111_1111)
+            //indicates done writing - or if column num is 640 && cur_column_write_stage
+
+       end else if(!cur_column_write_stage)
+
+
+
+       end else
+
+
+
+       end
 
         1'h0 : background_r <= writedata[7:0]; 
         1'h1 : background_g <= writedata[7:0];
@@ -57,28 +88,52 @@ endmodule
 
 
 module columns(
-
-    //should be able to write to array of 28 bit vals
-    //can take in 5x attributes and concatenate them + col num
+    input logic clk50, reset, write,
+    input logic colnum [9:0],
+    input logic new_coldata [27:0],
+    output logic col_data [27:0]
 );
 
+    //declare array https://www.chipverify.com/verilog/verilog-arrays
+    logic columns [27:0] col_num [9:0];
+
+    //write if necc + reset zeroes it all out
+    integer i;
+
+    always_ff @(posedge clk)
+    begin
+        if (reset) begin
+            for (i=10'h0; i<10'h280; i=i+10'h1) 
+                columns[i] <= 28'b00;
+
+        end if(write) begin
+            columns[colnum] = new_coldata;
+        end  
+    end
+
+    always_comb begin
+        col_data = columns[colnum]
+    end
 
 endmodule
 
 
-module texture(
-
-//should be able to write to array of 8 bit values
-//64x64x8 vals
-
-//can take in texture num, row, col + write / output val
-
+module textures(
+    input logic texture_type [2:0],
+    input logic row [8:0],
+    input logic col [9:0],
+    output logic texture_data [23:0]
 );
 
+    logic textures [27:0] col_num [9:0] texture_index [2:0];
+
+    //TODO somehow initialize all the textures right off the bat from another file
+
+    always_comb begin
+        texture_data = columns[colnum][texture_type];
+    end
 
 endmodule
-
-
 
 
 module vga_counters(
