@@ -1,7 +1,8 @@
 /*
- * Avalon memory-mapped peripheral that generates VGA
+ * Avalon memory-mapped peripheral that generates VGA signal from 
+ * column data in ray casting context.
  *
- * Stephen A. Edwards
+ * Adam Carpentieri AC4409
  * Columbia University
  */
 
@@ -16,25 +17,29 @@ module column_decoder(input logic        clk,
 		                   VGA_BLANK_n,
 		output logic 	   VGA_SYNC_n);
 
-    logic [10:0]	   hcount;
+    logic [10:0]	hcount;
     logic [9:0]     vcount;
 
-    logic [9:0]      cur_column_to_write;
-    logic           cur_column_write_stage; //1st or second stage of writing per column
-    logic [12:0]     cur_column_first_write_stage;
+    logic            cur_col_write_stage = 1'h0; //1st or second stage of writing per column
+    logic [1:0]      col_module_index_to_output = 2'b00; //columns module to display
+    logic [1:0]      col_module_index_to_write = 2'b01;  //columns module to write to
+    logic [2:0]      col_write;
+    logic            new_columns_ready = 1'b0;
+
+    logic [12:0]     cur_col_first_write_stage_data;
+
+    logic [9:0]  colnum [1:0];
+    logic [27:0] new_coldata [1:0];
+    logic [27:0] col_data [1:0];
 
     logic [2:0] texture_type_select;
     logic [8:0] texture_row_select;
     logic [9:0] texture_col_select;
     logic [23:0] cur_texture_rgb_vals;
-    
-    logic colnum [9:0] which_column [1:0];
-    logic new_coldata [27:0] which_column [1:0];
-    logic col_data [27:0] which_column [1:0];
 
-    columns columns0(clk, reset, write, colnum[0], new_coldata[0], coldata[0]),
-            columns1(clk, reset, write, colnum[1], new_coldata[1], coldata[1]),
-            columns2(clk, reset, write, colnum[2], new_coldata[2], coldata[2]);
+    columns columns0(clk, reset, col_write[0], colnum[0], new_coldata[0], col_data[0]),
+            columns1(clk, reset, col_write[1], colnum[1], new_coldata[1], col_data[1]),
+            columns2(clk, reset, col_write[2], colnum[2], new_coldata[2], col_data[2]);
 
     textures textures0 (texture_type_select, 
         texture_row_select, 
@@ -44,34 +49,45 @@ module column_decoder(input logic        clk,
 
     vga_counters counters(.clk50(clk), .*);
 
-   always_ff @(posedge clk)
+    always_ff @(posedge clk)
 
-     if (reset) begin
+        if (reset) begin
 
-      cur_column_to_write <= 10'h0;
-      cur_column_write_stage <= 1'h0;
+            colnum <= 30'h0;
+            cur_col_write_stage <= 1'h0;
+            col_module_index_to_output <= 2'b00; 
+            col_module_index_to_write <= 2'b01;
 
-     end else if (chipselect && write)
+        end else if (chipselect && write) begin
 
-       if(writedata == 16'b1111_1111_1111_1111)
-            //indicates done writing - or if column num is 640 && cur_column_write_stage
+            //if(writedata == 16'b1111_1111_1111_1111)
 
-       end else if(!cur_column_write_stage)
+            if(!cur_col_write_stage) begin
+            
+                cur_col_first_write_stage_data <= writedata[12:0];
+                col_write[col_module_index_to_write] <= 1'b0;
+            
+            end else begin
+                
+                new_coldata[col_module_index_to_write] <= {cur_col_first_write_stage_data, writedata[14:0]};
+                col_write[col_module_index_to_write] <= 1'b1;
+                colnum[col_module_index_to_write] <= colnum[col_module_index_to_write] + 10'b00_0000_0001; //increment col num
+            end
+
+            cur_col_write_stage <= cur_col_write_stage + 1'b1; //flips to 1 or 0
+
+        end else if(colnum[col_module_index_to_write] == 10'h281) begin //641st column indicates writing has finished
+            
+            col_module_index_to_write <= (2'b11 ^ col_module_index_to_write ^ col_module_index_to_output);
+            colnum[2'b11 ^ col_module_index_to_write ^ col_module_index_to_output] = 10'b0; //hope this works or else need new technique
+            new_columns_ready <= 1;
+
+        end
 
 
+        //TODO pixel pipeline
+    //always_ff @(posedge clk)
 
-       end else
-
-
-
-       end
-
-        1'h0 : background_r <= writedata[7:0]; 
-        1'h1 : background_g <= writedata[7:0];
-        
-       endcase
-
-     end
 
     always_comb begin
 
@@ -89,43 +105,41 @@ endmodule
 
 module columns(
     input logic clk50, reset, write,
-    input logic colnum [9:0],
-    input logic new_coldata [27:0],
-    output logic col_data [27:0]
+    input logic [9:0] col_num,
+    input logic [27:0] new_col_data,
+    output logic [27:0] col_data
 );
 
     //declare array https://www.chipverify.com/verilog/verilog-arrays
-    logic columns [27:0] col_num [9:0];
+    logic [27:0] columns [9:0];
 
     //write if necc + reset zeroes it all out
     integer i;
 
-    always_ff @(posedge clk)
-    begin
+    always_ff @(posedge clk50)
         if (reset) begin
             for (i=10'h0; i<10'h280; i=i+10'h1) 
                 columns[i] <= 28'b00;
 
-        end if(write) begin
-            columns[colnum] = new_coldata;
+        end else if(write) begin
+            columns[col_num] <= new_col_data;
         end  
-    end
 
     always_comb begin
-        col_data = columns[colnum]
+        col_data = columns[col_num];
     end
 
 endmodule
 
-
+//types: 1: bluestone, 2: colorstone, 3: eagle, 4: greystone, 5: mossy, 6: purplestone, 7: redbrick, 8: wood
 module textures(
-    input logic texture_type [2:0],
-    input logic row [5:0],
-    input logic col [5:0],
-    output logic texture_data [23:0]
+    input logic [2:0] texture_type ,
+    input logic [5:0] row,
+    input logic [5:0] col,
+    output logic [23:0] texture_data
 );
 
-    logic textures [27:0] col_num [5:0] row_num [5:0] texture_index [2:0];
+    logic  [27:0] textures [5:0] [5:0] [2:0]; //row num, col num, texture type
 
     initial begin
         $display("Loading texures.");
