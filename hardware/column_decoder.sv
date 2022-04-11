@@ -131,7 +131,7 @@ module columns(
 
 endmodule
 
-//types: 1: bluestone, 2: colorstone, 3: eagle, 4: greystone, 5: mossy, 6: purplestone, 7: redbrick, 8: wood
+//types: 0: bluestone, 1: colorstone, 2: eagle, 3: greystone, 4: mossy, 5: purplestone, 6: redbrick, 7: wood
 module textures(
     input logic [2:0] texture_type ,
     input logic [5:0] row,

@@ -56,11 +56,23 @@ struct column_decoder_dev {
  */
 static void write_columns(columns_t *columns)
 {
-	__u16 bits_to_send;
+	__u16 bits_to_send = 0x0000;
+	__u8 i;
+	column_arg_t column_arg;
 
-	//prep top of wall, wall_size, texture type bit shifted
-	
-	iowrite16(bits_to_send, dev.virtbase) );
+	for(i=0; i <640; i++) {
+		
+		column_arg = *(columns->column_args[i]);
+
+		bits_to_send = 0x0000 & (column_arg.top_of_wall << 4);
+		bits_to_send &= (column_arg.wall_side << 3);
+		bits_to_send &= column_arg.wall_side;
+		iowrite16(bits_to_send, dev.virtbase) );
+
+		bits_to_send = 0x0000 & (column_arg.wall_height << 6);
+		bits_to_send &= column_arg.texture_offset;
+		iowrite16(bits_to_send, dev.virtbase) );
+	}
 
 	dev.columns = *columns;
 }
