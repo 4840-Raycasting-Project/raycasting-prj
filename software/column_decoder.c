@@ -65,12 +65,12 @@ static void write_columns(columns_t *columns)
 		column_arg = *(columns->column_args[i]);
 
 		bits_to_send = 0x0000 & (column_arg.top_of_wall << 4);
-		bits_to_send &= (column_arg.wall_side << 3);
-		bits_to_send &= column_arg.wall_side;
+		bits_to_send |= (column_arg.wall_side << 3);
+		bits_to_send |= column_arg.wall_side;
 		iowrite16(bits_to_send, dev.virtbase) );
 
 		bits_to_send = 0x0000 & (column_arg.wall_height << 6);
-		bits_to_send &= column_arg.texture_offset;
+		bits_to_send |= column_arg.texture_offset;
 		iowrite16(bits_to_send, dev.virtbase) );
 	}
 
