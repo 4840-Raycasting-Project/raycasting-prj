@@ -6,11 +6,11 @@
  * Columbia University
  */
 
-module column_decoder(input logic        clk,
-	        input logic 	   reset,
-		input logic [15:0]  writedata,
+module column_decoder(input logic clk,
+	    input logic 	   reset,
 		input logic 	   write,
 		input 		   chipselect,
+        input logic [15:0]  writedata,
 
 		output logic [7:0] VGA_R, VGA_G, VGA_B,
 		output logic 	   VGA_CLK, VGA_HS, VGA_VS,
@@ -28,13 +28,13 @@ module column_decoder(input logic        clk,
 
     logic [12:0]     cur_col_first_write_stage_data;
 
-    logic [9:0]  colnum [1:0];
-    logic [27:0] new_coldata [1:0];
-    logic [27:0] col_data [1:0];
+    logic [9:0]  colnum [2:0];
+    logic [27:0] new_coldata [2:0];
+    logic [27:0] col_data [2:0];
 
     logic [2:0] texture_type_select;
-    logic [8:0] texture_row_select;
-    logic [9:0] texture_col_select;
+    logic [5:0] texture_row_select;
+    logic [5:0] texture_col_select;
     logic [23:0] cur_texture_rgb_vals;
 
     columns columns0(clk, reset, col_write[0], colnum[0], new_coldata[0], col_data[0]),
@@ -53,7 +53,7 @@ module column_decoder(input logic        clk,
 
         if (reset) begin
 
-            colnum <= 30'h0;
+            {colnum[0], colnum[1], colnum[2]} <= 30'h0;
             cur_col_write_stage <= 1'h0;
             col_module_index_to_output <= 2'b00; 
             col_module_index_to_write <= 2'b01;
@@ -111,7 +111,7 @@ module columns(
 );
 
     //declare array https://www.chipverify.com/verilog/verilog-arrays
-    logic [27:0] columns [9:0];
+    logic [27:0] columns [639:0];
 
     //write if necc + reset zeroes it all out
     integer i;
@@ -139,15 +139,18 @@ module textures(
     output logic [23:0] texture_data
 );
 
-    logic  [27:0] textures [5:0] [5:0] [2:0]; //row num, col num, texture type
+    logic [27:0] textures [32767:0]; //texture type, row num, col num
+    logic [14:0] texture_index;
 
+    //https://projectf.io/posts/initialize-memory-in-verilog/
     initial begin
-        $display("Loading texures.");
+        //$display("Loading texures.");
         $readmemh("textures.mem", textures);
     end
 
     always_comb begin
-        texture_data = columns[col][row][texture_type];
+        texture_index = {texture_type, row, col};
+        texture_data = textures[texture_index];
     end
 
 endmodule

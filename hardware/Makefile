@@ -68,6 +68,7 @@ qsys : $(SOPCINFO)
 $(SOPCINFO) $(QIP) $(HPS_PIN_TCL) $(SYSTEM)/ $(PRELOADER_SETTINGS_DIR) : $(QSYS)
 	rm -rf $(SOPCINFO) $(SYSTEM)/
 	qsys-generate $(QSYS) --synthesis=VERILOG
+	cp textures/textures.mem soc_system/synthesis/submodules/textures.mem
 
 # quartus
 #
