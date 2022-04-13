@@ -242,7 +242,7 @@ module scaling_factors(
 
     initial begin
         //$display("Loading scaling factors.");
-        $readmemh("sf.mem", scaling_factors);
+        $readmemb("sf.mem", scaling_factors);
     end
 
     always_comb begin
