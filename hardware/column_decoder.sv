@@ -37,11 +37,20 @@ module column_decoder(input logic clk,
     logic [5:0] texture_col_select;
     logic [23:0] cur_texture_rgb_vals;
 
-    logic [2:0]  s2_pixel_type = 3'b0; //0: ceiling, 1: wall, 2: floor
-    logic        s2_pixel_wall_dir = 1'b0;
+    logic [8:0]  sf_wall_height;
+    logic [16:0] scaling_factor;
+
+    logic [2:0] s2_pixel_type = 3'b0; //0: ceiling, 1: wall, 2: floor
+    logic       s2_pixel_wall_dir = 1'b0;
+    logic [2:0] s2_texture_type;
+    logic [5:0] s2_texture_offset;
+    logic [8:0] s2_top_of_wall; 
 
     logic [2:0]  s3_pixel_type = 3'b0; //0: ceiling, 1: wall, 2: floor
     logic        s3_pixel_wall_dir = 1'b0;
+
+    logic [2:0]  s4_pixel_type = 3'b0; //0: ceiling, 1: wall, 2: floor
+    logic        s4_pixel_wall_dir = 1'b0;  
 
     logic [23:0] next_pixel = 24'b0; //texture data in the on deck circle
 
@@ -57,9 +66,14 @@ module column_decoder(input logic clk,
         cur_texture_rgb_vals
     );
 
+    scaling_factors sf0 (
+        sf_wall_height,
+        scaling_factor
+    );
+
     vga_counters counters(.clk50(clk), .*);
 
-    always_ff @(posedge clk)
+    always_ff @(posedge clk) begin
 
         if (reset) begin
 
@@ -84,7 +98,7 @@ module column_decoder(input logic clk,
 
             cur_col_write_stage <= cur_col_write_stage + 1'b1; //flips to 1 or 0
 
-        end else if(colnum[col_module_index_to_write] == 10'h281) begin //641st column indicates writing has finished
+        end else if(colnum[col_module_index_to_write] == 10'h280) begin //640th column indicates writing has finished
             
             col_module_index_to_write <= 2'b11 ^ col_module_index_to_write ^ col_module_index_to_read;
             colnum[2'b11 ^ col_module_index_to_write ^ col_module_index_to_read] = 10'b0; //hope this works or else need new technique
@@ -92,22 +106,22 @@ module column_decoder(input logic clk,
         end
 
     //pixel pipeline
-    always_ff @(posedge clk)
+   // always_ff @(posedge clk)
 
-        if(hcount == 11'h4fd) //1277
+        if(hcount == 11'h4fc) //1276
             freeze_pipeline <= 1'b1;
 
-        else if(hcount == 11'h63c && vcount < 10'h1e0) //1597, 480
+        else if(hcount == 11'h63b && vcount < 10'h1e0) //1596, 480
             freeze_pipeline <= 1'b0; 
 
     //pipeline stage 1
-    always_ff @(posedge clk)
+   // always_ff @(posedge clk)
                        
         if(!freeze_pipeline)
             colnum[col_module_index_to_read] <= hcount[10:1];
 
     //pipeline stage 2
-    always_ff @(posedge clk)
+    //always_ff @(posedge clk) 
         
         //ceil
         if(vcount < col_data[col_module_index_to_read][27:19])
@@ -120,35 +134,53 @@ module column_decoder(input logic clk,
         else begin //wall
 
             s2_pixel_type <= 2'h1;
-
             s2_pixel_wall_dir <= col_data[col_module_index_to_read][18];
+            s2_texture_type <= col_data[col_module_index_to_read][17:15];
+            s2_texture_offset <= col_data[col_module_index_to_read][5:0];
+            s2_top_of_wall <= col_data[col_module_index_to_read][27:19];
 
-            texture_type_select <= col_data[col_module_index_to_read][17:15];
-            texture_col_select <= col_data[col_module_index_to_read][5:0];
-            texture_row_select <= //TODO maths
+            sf_wall_height <= col_data[col_module_index_to_read][14:6]; //load scaling factor
         end
 
     //pipeline stage 3
-    always_ff @(posedge clk)    
-        
-        s3_pixel_type <= s2_pixel_type;
+    //always_ff @(posedge clk)  
 
-        if(s2_pixel_type == 2'h1) begin
+        if(s2_pixel_type == 2'h1) begin //wall
+
+            s3_pixel_type <= s2_pixel_type;
+
+            s3_pixel_wall_dir <= s2_pixel_wall_dir;
+           
+            texture_type_select <= s2_texture_type;
+            texture_col_select <= s2_texture_offset;
+            texture_row_select <= ((vcount - s2_top_of_wall) * scaling_factor) >> 4'ha;
+        
+        end else
+            s3_pixel_type <= s2_pixel_type;
+
+    //pipeline stage 4
+   // always_ff @(posedge clk)    
+
+        if(s3_pixel_type == 2'h1) begin //wall
+
+            s4_pixel_type <= s3_pixel_type;
            
             next_pixel <= cur_texture_rgb_vals;
-            s3_pixel_wall_dir <= s2_pixel_wall_dir;
-        end
+            s4_pixel_wall_dir <= s3_pixel_wall_dir;
+        
+        end else
+            s4_pixel_type <= s3_pixel_type;
 
     //swap out column module to read from if new avail and in between frames
-    always_ff @(posedge clk)
+    //always_ff @(posedge clk)
 
         if(vcount == 10'h1e0 && new_columns_ready) begin //480
 
             new_columns_ready <= 1'b0;
-            col_module_index_to_read <= 2'b11 ^ col_module_to_read ^ col_module_to_write;
+            col_module_index_to_read <= 2'b11 ^ col_module_index_to_read ^ col_module_index_to_write;
         end
 
-
+    end
     always_comb begin
 
         {VGA_R, VGA_G, VGA_B} = {8'h0, 8'h0, 8'h0};
@@ -157,20 +189,18 @@ module column_decoder(input logic clk,
           {VGA_R, VGA_G, VGA_B} = {8'h0, 8'h0, 8'h0}; //just give it something so verilog doesn't complain (pins are actually not read)
         else begin
 
-            if(s3_pixel_type == 2'h0) //ceil
+            if(s4_pixel_type == 2'h0) //ceil
                 {VGA_R, VGA_G, VGA_B} = {8'h32, 8'h32, 8'h32};
-            else if(s3_pixel_type == 2'h2) //floor
+            else if(s4_pixel_type == 2'h2) //floor
                 {VGA_R, VGA_G, VGA_B} = {8'ha, 8'ha, 8'ha};
-            else if(!s3_pixel_wall_dir) //wall faded
+            else if(!s4_pixel_wall_dir) //wall faded
                 {VGA_R, VGA_G, VGA_B} = {(next_pixel[23:16]>>1), (next_pixel[15:8]>>1), (next_pixel[7:0]>>1)};
             else //wall full brightness
                 {VGA_R, VGA_G, VGA_B} = next_pixel;
         end
-
     end
 
 endmodule
-
 
 module columns(
     input logic clk50, reset, write,
@@ -200,16 +230,37 @@ module columns(
 
 endmodule
 
+//preprocess scaling factors - if division causes problems can load a mem file with binary data pre-calculated
+//may need to embiggen the <<3 expansion factor if not precise enough
+module scaling_factors(
+    input logic [8:0] wall_height,
+    output logic [16:0] scaling_factor
+);
+
+    logic [16:0] scaling_factors [639:0];
+    integer i;
+
+    initial begin
+        //$display("Loading scaling factors.");
+        $readmemh("sf.mem", scaling_factors);
+    end
+
+    always_comb begin
+        scaling_factor = scaling_factors[wall_height];
+    end
+
+
+endmodule
+
 //types: 0: bluestone, 1: colorstone, 2: eagle, 3: greystone, 4: mossy, 5: purplestone, 6: redbrick, 7: wood
 module textures(
-    input logic [2:0] texture_type ,
+    input logic [2:0] texture_type,
     input logic [5:0] row,
     input logic [5:0] col,
     output logic [23:0] texture_data
 );
 
     logic [27:0] textures [32767:0]; //texture type, row num, col num
-    logic [14:0] texture_index;
 
     //https://projectf.io/posts/initialize-memory-in-verilog/
     initial begin
@@ -218,8 +269,7 @@ module textures(
     end
 
     always_comb begin
-        texture_index = {texture_type, row, col};
-        texture_data = textures[texture_index];
+        texture_data = textures[{texture_type, row, col}];
     end
 
 endmodule
