@@ -1,4 +1,4 @@
-Simple Device Driver for the VGA 7-segment LED emulator
+Simple Device Driver for Raycasting Column Decoder
 
 make
 
@@ -8,11 +8,11 @@ echo 8 > /proc/sys/kernel/printk
 # Alternately,
 dmesg | tail -7
 
-insmod vga_led.ko
+insmod column_decoder.ko
 lsmod
 ./hello
 
-rmmod vga_led
+rmmod column_decoder
 
 Once the module is loaded, look for information about it with
 

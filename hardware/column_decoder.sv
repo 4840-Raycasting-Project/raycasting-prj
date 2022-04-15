@@ -230,8 +230,7 @@ module columns(
 
 endmodule
 
-//preprocess scaling factors - if division causes problems can load a mem file with binary data pre-calculated
-//may need to embiggen the <<3 expansion factor if not precise enough
+//load preprocessed scaling factors
 module scaling_factors(
     input logic [8:0] wall_height,
     output logic [16:0] scaling_factor

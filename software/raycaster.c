@@ -1,274 +1,539 @@
 /*
- * Userspace program that communicates with the vga_ball device driver
- * through ioctls
- *
- * Stephen A. Edwards
- * Columbia University
- */
+Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
+TODO:
+
+1. Texture mapping
+
+3. Bit shift operations for speedup
+4. Other speedup optimizations
+
+6. Thread to update the future hardware
+7. usb controller input?
+8. sprites?
+9. Floor / ceiling color gradients or (texture -> harder)
+
+*/
+
+#include "column_decoder.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include "vga_ball.h"
+#include <string.h>
+#include <unistd.h>
+#include "usbkeyboard.h"
+#include <pthread.h>
+#include <stdbool.h> 
+#include <math.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <string.h>
-#include <unistd.h>
 #include <stdint.h>
 
-#define MAX_X 640
-#define MAX_Y 480
-#define MAX_SPEED 4
+// size of tile (wall height) - best to make some power of 2
+#define TILE_SIZE 64
+#define WALL_HEIGHT 64
+#define PROJECTIONPLANEWIDTH 1024
+#define PROJECTIONPLANEHEIGHT 768
+#define ANGLE60 PROJECTIONPLANEWIDTH
+#define ANGLE30 (ANGLE60/2)
+#define ANGLE15 (ANGLE30/2)
+#define ANGLE90 (ANGLE30*3)
+#define ANGLE180 (ANGLE90*2)
+#define ANGLE270 (ANGLE90*3)
+#define ANGLE360 (ANGLE60*6)
+#define ANGLE0 0
+#define ANGLE5 (ANGLE30/6)
+#define ANGLE10 (ANGLE5*2)
 
-#define COLORS 9
+columns_t columns;
 
-int vga_ball_fd;
+//best to make this some power of 2 (with column decoder MUST be 1)
+#define COLUMN_WIDTH 1
 
-static const vga_ball_color_t colors[] = {
-	{ 0xff, 0x00, 0x00 }, /* Red */
-	{ 0x00, 0xff, 0x00 }, /* Green */
-	{ 0x00, 0x00, 0xff }, /* Blue */
-	{ 0xff, 0xff, 0x00 }, /* Yellow */
-	{ 0x00, 0xff, 0xff }, /* Cyan */
-	{ 0xff, 0x00, 0xff }, /* Magenta */
-	{ 0x80, 0x80, 0x80 }, /* Gray */
-	{ 0x00, 0x00, 0x00 }, /* Black */
-	{ 0xff, 0xff, 0xff }  /* White */
-};
+// precomputed trigonometric tables
+float fSinTable[ANGLE360+1];
+float fISinTable[ANGLE360+1];
+float fCosTable[ANGLE360+1];
+float fICosTable[ANGLE360+1];
+float fTanTable[ANGLE360+1];
+float fITanTable[ANGLE360+1];
+float fFishTable[ANGLE360+1];
+float fXStepTable[ANGLE360+1];
+float fYStepTable[ANGLE360+1];
 
-/* Read and print the background color */
-void print_initial_state(vga_ball_arg_t *vla) {
-  
-  if (ioctl(vga_ball_fd, VGA_BALL_READ_ATTR, vla)) {
-      perror("ioctl(VGA_BALL_READ_ATTR) failed");
-      return;
-  }
-  printf("%02x %02x %02x\n",
-	 vla->background.red, vla->background.green, vla->background.blue);
+// player's attributes
+int fPlayerX = 100; int tmpPlayerX;
+int fPlayerY = 160; int tmpPlayerY;
+int fPlayerArc = ANGLE0;
+int fPlayerDistanceToTheProjectionPlane = 277;
+int fPlayerHeight = 32;
+int fPlayerSpeed = 8;
+int fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
 
-  printf("%d %d %d\n",
-	 vla->pos.pos_x, vla->pos.pos_y, vla->radius);	 
-}
+// movement flag
+bool fKeyUp = false;
+bool fKeyDown = false;
+bool fKeyLeft = false;
+bool fKeyRight = false;
 
-/* Set the background color */
-void set_background_color(const vga_ball_color_t *c)
-{
-  vga_ball_arg_t vla;
-  vla.background = *c;
-  
-  if (ioctl(vga_ball_fd, VGA_BALL_WRITE_BACKGROUND, &vla)) {
-      perror("ioctl(VGA_BALL_SET_BACKGROUND) failed");
-      return;
-  }
-}
+// 2 dimensional map
+static const uint8_t W = 1; // wall
+static const uint8_t O = 0; // opening
+static const uint8_t MAP_WIDTH = 12;
+static const uint8_t MAP_HEIGHT = 12;
 
-void set_ball_color(const vga_ball_color_t *c)
-{
-  vga_ball_arg_t vla;
-  vla.ball_color = *c;
-  
-  if (ioctl(vga_ball_fd, VGA_BALL_WRITE_BALL_COLOR, &vla)) {
-      perror("ioctl(VGA_BALL_SET_BALL_COLOR) failed");
-      return;
-  }
-}
+uint8_t *fMap;
 
-void set_position(const vga_ball_pos_t *pos)
-{
-  vga_ball_arg_t vla;
-  vla.pos = *pos;
+struct libusb_device_handle *keyboard;
+uint8_t endpoint_address;
 
-  if (ioctl(vga_ball_fd, VGA_BALL_WRITE_POSITION, &vla)) {
-      perror("ioctl(VGA_BALL_SET_POSITION) failed");
-	   printf("failed position set ");
-      return;
-  }
-}
+//function signatures
+void render();
+void create_tables();
+float arc_to_rad(float);
+void handle_key_press(struct usb_keyboard_packet *, bool);
 
-void set_radius(const uint16_t radius)
-{
-  vga_ball_arg_t vla;
-  vla.radius = radius;
-  
-  if (ioctl(vga_ball_fd, VGA_BALL_WRITE_RADIUS, &vla)) {
-      perror("ioctl(VGA_BALL_SET_RADIUS) failed");
-      return;
-  }
-}
+bool up_pressed, down_pressed, left_pressed, right_pressed;
 
-void fade_radius(const uint16_t target_radius, const uint8_t speed) {
-	
-	//get initial radius
-	vga_ball_arg_t vla;
-	
-	if (ioctl(vga_ball_fd, VGA_BALL_READ_ATTR, &vla)) {
-		perror("ioctl(VGA_BALL_READ_ATTR) failed");
-		return;
-	}
-	
-	uint16_t cur_radius = vla.radius;
+pthread_t keyboard_thread;
+void *keyboard_thread_f(void *);
 
-	if(cur_radius == target_radius)
-		return;
-	
-	int8_t multiplier = cur_radius < target_radius ? 1 : -1;
-	
-	while(cur_radius != target_radius) {
-			
-		cur_radius = abs(target_radius - cur_radius) < speed 
-			? target_radius 
-			: cur_radius + (speed * multiplier);
-			
-		set_radius(cur_radius);
-
-			
-		usleep(20000);
-	}
-	
-	return;
-}
-
-void fade_ball_color() {
-	
-
-}
-
-void fade_bg_color() {
-	
-	
-	
-}
-
-void bounce(char dir, ball_vector *bv) {
-	
-	short *vector = dir == 'x' ? &bv->speed_x : &bv->speed_y;
-	
-	*vector = *vector * -1;	
-	
-	//TODO fade colors
-	
-	//TODO ensure bg color different from last
-	short bg_color_index;
-	bg_color_index = rand() % COLORS;
-	
-	set_background_color(&colors[bg_color_index]);
-	
-	short ball_color_index;
-	do {
-		ball_color_index = rand() % COLORS;
-	} while(ball_color_index == bg_color_index);
-	
-	set_ball_color(&colors[ball_color_index]);
-}
-
-void move(vga_ball_arg_t *vla, ball_vector *bv) {
-	
-	//establish boundaries
-	int min_pos = 0 + vla->radius;
-	int max_x_pos = 640 - vla->radius;
-	int max_y_pos = 480 - vla->radius;	
-	
-	//draw ball to next pos, not further than edge
-	vla->pos.pos_x += bv->speed_x;
-	
-	if(vla->pos.pos_x < min_pos)
-		vla->pos.pos_x = min_pos;
-	else if(vla->pos.pos_x > max_x_pos)
-		vla->pos.pos_x = max_x_pos;
-	
-	if(vla->pos.pos_x == min_pos || vla->pos.pos_x == max_x_pos)
-		bounce('x', bv);
-	
-	
-	vla->pos.pos_y += bv->speed_y;
-	
-	if(vla->pos.pos_y < min_pos)
-		vla->pos.pos_y = min_pos;
-	else if(vla->pos.pos_y > max_y_pos)
-		vla->pos.pos_y = max_y_pos;
-	
-	if(vla->pos.pos_y == min_pos || vla->pos.pos_y == max_y_pos)
-		bounce('y', bv);
-	
-	vga_ball_pos_t position = {vla->pos.pos_x,vla->pos.pos_y};
-	set_position(&position);
-}
-
+int column_decoder_fd;
 
 int main() {
-	
-	vga_ball_arg_t vla;
-	int i;
-	vga_ball_color_t bg_color = { 0x00, 0x00, 0x00 };
-	vga_ball_color_t ball_color = { 0xff, 0xff, 0xff };
-	static const char filename[] = "/dev/vga_ball";
-  
+    
+    //TODO way to clear screen
+
+    static const char filename[] = "/dev/column_decoder";
+
 	printf("VGA ball Userspace program started\n");
 
-	if ( (vga_ball_fd = open(filename, O_RDWR)) == -1) {
+	if ( (column_decoder_fd = open(filename, O_RDWR)) == -1) {
 		
 		fprintf(stderr, "could not open %s\n", filename);
 		return -1;
-	} 
-	
-	//reset position
-	uint16_t pos_x = 320;
-	uint16_t pos_y = 240;
-	vga_ball_pos_t position = {pos_x,pos_y};
-	set_position(&position);
-	
-	//reset background
-	set_background_color(&bg_color);
-	
-	//reset ball color
-	set_ball_color(&ball_color);
-	
-	printf("initial state: ");
-	print_initial_state(&vla);	
-	
-	set_radius(32);
-	//pulse radius for 3 seconds
-	fade_radius(90, 2);
-	fade_radius(32, 2);
-	fade_radius(100, 2);
-	fade_radius(32, 1);
-	
-	
-	//TODO fade color on another thread
+	}     
 
-	//pick random x and y speed
-	short x_speed = 0, y_speed = 0;
-	
-	while(!x_speed) {
-		
-		short multiplier = rand() % 2;
-		if(!multiplier)
-			multiplier = -1;
-		
-		x_speed = ((rand() % MAX_SPEED) + 1) * multiplier;	
-	}
-	
-	while(!y_speed) {
-		
-		short multiplier = rand() % 2;
-		if(!multiplier)
-			multiplier = -1;
-		
-		y_speed = ((rand() % MAX_SPEED) + 1) * multiplier;	
-	}	
-	
-	ball_vector bv = {
-		speed_x: x_speed,
-		speed_y: y_speed		
-	};
-	
+    create_tables();
 
-	for(;;) {
-		move(&vla, &bv);
+    /* Open the keyboard */
+    if ((keyboard = openkeyboard(&endpoint_address)) == NULL) {
+        fprintf(stderr, "Did not find a keyboard\n");
+        exit(1);
+    }
+	
+	//start keyboard thread
+	pthread_create(&keyboard_thread, NULL, keyboard_thread_f, NULL);
+	
+	render();
+	
+	int map_size = MAP_HEIGHT * MAP_WIDTH;
+
+    while(true) {
+
+		//uint8_t keycode = get_last_keycode(packet.keycode);
+		//char gameplay_key = get_gameplay_key(keycode);
+
+		// rotate left
+		if(left_pressed) {
+			if((fPlayerArc -= ANGLE5) < ANGLE0)
+				fPlayerArc += ANGLE360;
+		}
+		
+		// rotate right
+		else if(right_pressed) {
+			if((fPlayerArc += ANGLE5) >= ANGLE360)
+				fPlayerArc -= ANGLE360;
+		}
+
+			//  _____     _
+			// |\ arc     |
+			// |  \       y
+			// |    \     |
+		//            -
+			// |--x--|  
+			//
+			//  sin(arc)=y/diagonal
+			//  cos(arc)=x/diagonal   where diagonal=speed
+		float playerXDir = fCosTable[fPlayerArc];
+		float playerYDir = fSinTable[fPlayerArc];
+
+		// move forward
+		if(up_pressed) {
+			
+			tmpPlayerX = fPlayerX + (int)(playerXDir * fPlayerSpeed);
+			tmpPlayerY = fPlayerY + (int)(playerYDir * fPlayerSpeed);
+			
+			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
+
+			if(map_index < map_size && fMap[map_index] != W) {
+				
+				fPlayerX = tmpPlayerX;
+				fPlayerY = tmpPlayerY;
+			}
+		}
+		
+		// move backward
+		else if(down_pressed) {
+			
+			tmpPlayerX = fPlayerX - (int)(playerXDir * fPlayerSpeed);
+			tmpPlayerY = fPlayerY - (int)(playerYDir * fPlayerSpeed);
+			
+			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
+			
+			if(map_index < map_size && fMap[map_index] != W) {
+				
+				fPlayerX = tmpPlayerX;
+				fPlayerY = tmpPlayerY;
+			}
+		}
+		
+		//TODO only call if position changed
+		render();
+		
 		usleep(20000);
+    }
+
+    fb_clear_screen(); 
+	
+	free(fMap);
+	
+	pthread_cancel(keyboard_thread);
+    pthread_join(keyboard_thread, NULL);
+
+    return 0;
+}
+
+void *keyboard_thread_f(void *ignored) {
+	
+	int transferred;
+	
+	struct usb_keyboard_packet packet;
+	
+	while(true) {
+		
+		libusb_interrupt_transfer(keyboard, endpoint_address,
+			      (unsigned char *) &packet, sizeof(packet),
+			      &transferred, 0);
+
+        if (transferred == sizeof(packet)) {
+			
+			up_pressed = is_key_pressed(0x52, packet.keycode);
+			down_pressed = is_key_pressed(0x51, packet.keycode);
+			left_pressed = is_key_pressed(0x50, packet.keycode);
+			right_pressed = is_key_pressed(0x4F, packet.keycode);
+		}
 	}
   
-	printf("VGA BALL Userspace program terminating\n");
-	return 0;
+	return NULL;
 }
+
+void render() {
+
+    int verticalGrid;        // horizotal or vertical coordinate of intersection
+    int horizontalGrid;      // theoritically, this will be multiple of TILE_SIZE
+                                // , but some trick did here might cause
+                                // the values off by 1
+    int distToNextVerticalGrid; // how far to the next bound (this is multiple of
+    int distToNextHorizontalGrid; // tile size)
+    float xIntersection;  // x and y intersections
+    float yIntersection;
+    float distToNextXIntersection;
+    float distToNextYIntersection;
+
+    int xGridIndex;        // the current cell that the ray is in
+    int yGridIndex;
+
+    float distToVerticalGridBeingHit;      // the distance of the x and y ray intersections from
+    float distToHorizontalGridBeingHit;      // the viewpoint
+
+    int castArc, castColumn;
+
+    castArc = fPlayerArc;
+        // field of view is 60 degree with the point of view (player's direction in the middle)
+        // 30  30
+        //    ^
+        //  \ | /
+        //   \|/
+        //    v
+        // we will trace the rays starting from the leftmost ray
+    castArc -= ANGLE30;
+        // wrap around if necessary
+    if(castArc < 0)
+        castArc = ANGLE360 + castArc;
+
+    for(castColumn=0; castColumn < PROJECTIONPLANEWIDTH; castColumn += COLUMN_WIDTH) {
+        
+        // ray is between 0 to 180 degree (1st and 2nd quadrant)
+        // ray is facing down
+        if(castArc > ANGLE0 && castArc < ANGLE180) {
+                // truncuate then add to get the coordinate of the FIRST grid (horizontal
+                // wall) that is in front of the player (this is in pixel unit)
+                // ROUND DOWN
+            horizontalGrid = (fPlayerY / TILE_SIZE) * TILE_SIZE + TILE_SIZE;
+
+            // compute distance to the next horizontal wall
+            distToNextHorizontalGrid = TILE_SIZE;
+
+            float xtemp = fITanTable[castArc] * (horizontalGrid - fPlayerY);
+                    // we can get the vertical distance to that wall by
+                    // (horizontalGrid-GLplayerY)
+                    // we can get the horizontal distance to that wall by
+                    // 1/tan(arc)*verticalDistance
+                    // find the x interception to that wall
+            xIntersection = xtemp + fPlayerX;
+        }
+        
+        // else, the ray is facing up
+        else {
+
+            horizontalGrid = (fPlayerY / TILE_SIZE) * TILE_SIZE;
+            distToNextHorizontalGrid = -TILE_SIZE;
+
+            float xtemp = fITanTable[castArc] * (horizontalGrid - fPlayerY);
+            xIntersection = xtemp + fPlayerX;
+
+            horizontalGrid--;
+        }
+        
+        // LOOK FOR HORIZONTAL WALL
+        if(castArc == ANGLE0 || castArc == ANGLE180)
+            distToHorizontalGridBeingHit=__FLT_MAX__;//Float.MAX_VALUE;
+        
+        // else, move the ray until it hits a horizontal wall
+        else {
+            distToNextXIntersection = fXStepTable[castArc];
+
+            while(true) {
+
+                xGridIndex = (int)(xIntersection / TILE_SIZE);
+                // in the picture, yGridIndex will be 1
+                yGridIndex = (horizontalGrid / TILE_SIZE);
+
+                if((xGridIndex >= MAP_WIDTH) ||
+                    (yGridIndex >= MAP_HEIGHT) ||
+                    xGridIndex < 0 || yGridIndex < 0) {
+
+                    distToHorizontalGridBeingHit = __FLT_MAX__;
+                    break;
+                }
+                else if ((fMap[yGridIndex*MAP_WIDTH + xGridIndex]) != O) {
+                    distToHorizontalGridBeingHit  = (xIntersection-fPlayerX)*fICosTable[castArc];
+                    break;
+                }
+                // else, the ray is not blocked, extend to the next block
+                else {
+                    xIntersection += distToNextXIntersection;
+                    horizontalGrid += distToNextHorizontalGrid;
+                }
+            }
+        }
+
+        // FOLLOW X RAY
+        if(castArc < ANGLE90 || castArc > ANGLE270) {
+
+            verticalGrid = TILE_SIZE + (fPlayerX / TILE_SIZE) * TILE_SIZE;
+            distToNextVerticalGrid = TILE_SIZE;
+
+            float ytemp = fTanTable[castArc] * (verticalGrid - fPlayerX);
+            yIntersection = ytemp + fPlayerY;
+        }
+        // RAY FACING LEFT
+        else {
+            
+            verticalGrid = (fPlayerX/TILE_SIZE)*TILE_SIZE;
+            distToNextVerticalGrid = -TILE_SIZE;
+
+            float ytemp = fTanTable[castArc] * (verticalGrid - fPlayerX);
+            yIntersection = ytemp + fPlayerY;
+
+            verticalGrid--;
+        }
+        
+        // LOOK FOR VERTICAL WALL
+        if(castArc == ANGLE90 || castArc == ANGLE270) 
+            distToVerticalGridBeingHit = __FLT_MAX__;
+        
+        else {
+            
+            distToNextYIntersection = fYStepTable[castArc];
+        
+            while(true) {
+                // compute current map position to inspect
+                xGridIndex = (verticalGrid / TILE_SIZE);
+                yGridIndex = (int)(yIntersection / TILE_SIZE);
+
+                if ((xGridIndex >= MAP_WIDTH) ||
+                    (yGridIndex >= MAP_HEIGHT) ||
+                    xGridIndex < 0 || yGridIndex < 0) {
+                    distToVerticalGridBeingHit = __FLT_MAX__;
+                    break;
+                }
+                else if ((fMap[yGridIndex * MAP_WIDTH + xGridIndex]) != O) {
+                    distToVerticalGridBeingHit = (yIntersection - fPlayerY) * fISinTable[castArc];
+                    break;
+                }
+                else  {
+                    yIntersection += distToNextYIntersection;
+                    verticalGrid += distToNextVerticalGrid;
+                }
+            }
+        }
+
+        //TODO replace below with a tuple system which will be decoded by software then hardware
+
+        // DRAW THE WALL SLICE
+        float scaleFactor;
+        float dist;
+        int topOfWall;   // used to compute the top and bottom of the sliver that
+        int bottomOfWall;   // will be the staring point of floor and ceiling
+		uint8_t wall_side; //0=x, 1=y
+		uint8_t offset;
+		
+            // determine which ray strikes a closer wall.
+            // if yray distance to the wall is closer, the yDistance will be shorter than
+                // the xDistance
+        if (distToHorizontalGridBeingHit < distToVerticalGridBeingHit) {
+            
+            // the next function call (drawRayOnMap()) is not a part of raycating rendering part, 
+            // it just draws the ray on the overhead map to illustrate the raycasting process
+            dist = distToHorizontalGridBeingHit;
+			wall_side = 0;
+			offset = (int)xIntersection % TILE_SIZE;
+        }
+        // else, we use xray instead (meaning the vertical wall is closer than
+        //   the horizontal wall)
+        else {
+            
+            // the next function call (drawRayOnMap()) is not a part of raycasting rendering part, 
+            // it just draws the ray on the overhead map to illustrate the raycasting process
+            dist = distToVerticalGridBeingHit;
+			wall_side = 1;
+			offset = (int)yIntersection % TILE_SIZE;
+        }
+
+        // correct distance (compensate for the fishbown effect)
+        dist /= fFishTable[castColumn];
+        // projected_wall_height/wall_height = fPlayerDistToProjectionPlane/dist;
+        int projectedWallHeight = (int)(WALL_HEIGHT * (float)fPlayerDistanceToTheProjectionPlane / dist);
+        bottomOfWall = fProjectionPlaneYCenter + (int)(projectedWallHeight * 0.5F);
+        topOfWall = PROJECTIONPLANEHEIGHT - bottomOfWall;
+
+        if(bottomOfWall >= PROJECTIONPLANEHEIGHT)
+            bottomOfWall = PROJECTIONPLANEHEIGHT - 1;
+
+        columns.column_args[castColumn].top_of_wall = topOfWall;
+        columns.column_args[castColumn].wall_side = wall_side;
+        columns.column_args[castColumn].texture_type = 1; //TODO HAVE TO MAKE TEXTURES PART OF MAP
+        columns.column_args[castColumn].wall_height = projectedWallHeight;
+        columns.column_args[castColumn].texture_offset = offset;
+
+        // TRACE THE NEXT RAY
+        castArc += COLUMN_WIDTH;
+        if (castArc >= ANGLE360)
+            castArc -= ANGLE360;
+    }
+
+    //send the columns to the driver
+    if (ioctl(column_decoder_fd, COLUMN_DECODER_WRITE_COLUMNS, &columns)) {
+		perror("ioctl(COLUMN_DECODER_WRITE_COLUMNS) failed");
+		return;
+	}
+}
+
+void create_tables() {
+
+    int i;
+    float radian;
+
+    for (i=0; i <= ANGLE360; i++) {
+        // get the radian value (the last addition is to avoid division by 0, try removing
+            // that and you'll see a hole in the wall when a ray is at 0, 90, 180, or 270 degree)
+        radian = arc_to_rad(i) + (float)(0.0001);
+        fSinTable[i] = (float)sin(radian);
+        fISinTable[i] = (1.0F / (fSinTable[i]));
+        fCosTable[i] = (float)cos(radian);
+        fICosTable[i] = (1.0F / (fCosTable[i]));
+        fTanTable[i] = (float)tan(radian);
+        fITanTable[i] = (1.0F / fTanTable[i]);
+
+        //  you can see that the distance between xi is the same
+        //  if we know the angle
+        //  _____|_/next xi______________
+        //       |
+        //  ____/|next xi_________   slope = tan = height / dist between xi's
+        //     / |
+        //  __/__|_________  dist between xi = height/tan where height=tile size
+        // old xi|
+        //                  distance between xi = x_step[view_angle];
+        //
+        //
+        // facine left
+        // facing left
+        if (i >= ANGLE90 && i < ANGLE270) {
+
+            fXStepTable[i] = (float)(TILE_SIZE / fTanTable[i]);
+            if (fXStepTable[i] > 0)
+                fXStepTable[i] = -1 * fXStepTable[i];
+        }
+        // facing right
+        else {
+
+            fXStepTable[i] = (float)(TILE_SIZE / fTanTable[i]);
+            if(fXStepTable[i] < 0)
+                fXStepTable[i] = -1 * fXStepTable[i];
+        }
+
+        // FACING DOWN
+        if (i >= ANGLE0 && i < ANGLE180) {
+
+            fYStepTable[i] = (float)(TILE_SIZE * fTanTable[i]);
+            if (fYStepTable[i] < 0)
+                fYStepTable[i] = -1 * fYStepTable[i];
+        }
+        // FACING UP
+        else {
+            fYStepTable[i] = (float)(TILE_SIZE * fTanTable[i]);
+            if (fYStepTable[i] > 0)
+                fYStepTable[i] = -1 * fYStepTable[i];
+        }
+    }
+
+    for (i = -ANGLE30; i <= ANGLE30; i++) {
+
+        radian = arc_to_rad(i);
+        // we don't have negative angle, so make it start at 0
+        // this will give range 0 to 320
+        fFishTable[i + ANGLE30] = (float)(1.0F / cos(radian));
+    }
+	
+	fMap = (uint8_t*)calloc((MAP_HEIGHT * MAP_WIDTH), sizeof(uint8_t));
+	
+	uint8_t fMapCopy[] =
+		{
+			W,W,W,W,W,W,W,W,W,W,W,W,
+			W,O,O,O,O,O,O,O,O,O,O,W,
+			W,O,O,O,O,O,O,O,O,O,O,W,
+			W,O,O,O,O,O,O,O,W,O,O,W,
+			W,O,O,W,O,W,O,O,W,O,O,W,
+			W,O,O,W,O,W,W,O,W,O,O,W,
+			W,O,O,W,O,O,W,O,W,O,O,W,
+			W,O,O,O,W,O,W,O,W,O,O,W,
+			W,O,O,O,W,O,W,O,W,O,O,W,
+			W,O,O,O,W,W,W,O,W,O,O,W,
+			W,O,O,O,O,O,O,O,O,O,O,W,
+			W,W,W,W,W,W,W,W,W,W,W,W
+		};
+		
+	for (i=0; i < (MAP_HEIGHT * MAP_WIDTH); i++)
+		fMap[i] = fMapCopy[i];
+}
+
+  //*******************************************************************//
+//* Convert arc to radian
+//*******************************************************************//
+float arc_to_rad(float arc_angle) {
+    return ((float)(arc_angle*M_PI)/(float)ANGLE180);    
+}
+

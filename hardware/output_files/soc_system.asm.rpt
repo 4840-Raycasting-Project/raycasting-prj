@@ -1,5 +1,5 @@
 Assembler report for soc_system
-Sun Apr 10 23:13:37 2022
+Wed Apr 13 21:26:35 2022
 Quartus Prime Version 21.1.0 Build 842 10/21/2021 SJ Lite Edition
 
 
@@ -38,7 +38,7 @@ https://fpgasoftware.intel.com/eula.
 +---------------------------------------------------------------+
 ; Assembler Summary                                             ;
 +-----------------------+---------------------------------------+
-; Assembler Status      ; Successful - Sun Apr 10 23:13:37 2022 ;
+; Assembler Status      ; Successful - Wed Apr 13 21:26:35 2022 ;
 ; Revision Name         ; soc_system                            ;
 ; Top-level Entity Name ; soc_system_top                        ;
 ; Family                ; Cyclone V                             ;
@@ -95,8 +95,8 @@ https://fpgasoftware.intel.com/eula.
 +----------------+-------------------------+
 ; Option         ; Setting                 ;
 +----------------+-------------------------+
-; JTAG usercode  ; 0x00B8F391              ;
-; Checksum       ; 0x00B8F391              ;
+; JTAG usercode  ; 0x05F96B0B              ;
+; Checksum       ; 0x05F96B0B              ;
 +----------------+-------------------------+
 
 
@@ -120,16 +120,16 @@ Info: Running Quartus Prime Assembler
     Info: Intel and sold by Intel or its authorized distributors.  Please
     Info: refer to the applicable agreement for further details, at
     Info: https://fpgasoftware.intel.com/eula.
-    Info: Processing started: Sun Apr 10 23:13:28 2022
+    Info: Processing started: Wed Apr 13 21:26:14 2022
 Info: Command: quartus_asm soc_system
 Info (115030): Assembler is generating device programming files
 Warning (11713): The configuration of the Hard Processor Subsystem (HPS) within this design has changed.
 The Preloader software that initializes the HPS requires an update.
 Using hps_isw_handoff/soc_system_hps_0/, run the Preloader Support Package Generator to update your Preloader software
 Info: Quartus Prime Assembler was successful. 0 errors, 1 warning
-    Info: Peak virtual memory: 551 megabytes
-    Info: Processing ended: Sun Apr 10 23:13:37 2022
-    Info: Elapsed time: 00:00:09
-    Info: Total CPU time (on all processors): 00:00:09
+    Info: Peak virtual memory: 947 megabytes
+    Info: Processing ended: Wed Apr 13 21:26:35 2022
+    Info: Elapsed time: 00:00:21
+    Info: Total CPU time (on all processors): 00:00:21
 
 
