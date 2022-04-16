@@ -236,7 +236,7 @@ module scaling_factors(
     output logic [16:0] scaling_factor
 );
 
-    logic [16:0] scaling_factors [639:0];
+    logic [16:0] scaling_factors [479:0];
     integer i;
 
     initial begin
