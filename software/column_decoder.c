@@ -46,8 +46,7 @@
 struct column_decoder_dev {
 	struct resource res; /* Resource: our register */
 	void __iomem *virtbase; /* Where register can be accessed in memory */
-	
-	struct columns_t columns;
+	columns_t *columns;
 } dev;
 
 /*
@@ -57,24 +56,24 @@ struct column_decoder_dev {
 static void write_columns(columns_t *columns)
 {
 	__u16 bits_to_send = 0x0000;
-	__u8 i;
+	__u16 i;
 	column_arg_t column_arg;
 
-	for(i=0; i <640; i++) {
+	for(i=0; i<640; i++) {
 		
-		column_arg = *(columns->column_args[i]);
+		column_arg = columns->column_args[i];
 
 		bits_to_send = 0x0000 & (column_arg.top_of_wall << 4);
 		bits_to_send |= (column_arg.wall_side << 3);
 		bits_to_send |= column_arg.texture_type;
-		iowrite16(bits_to_send, dev.virtbase) );
+		iowrite16(bits_to_send, dev.virtbase);
 
 		bits_to_send = 0x0000 & (column_arg.wall_height << 6);
 		bits_to_send |= column_arg.texture_offset;
-		iowrite16(bits_to_send, dev.virtbase) );
+		iowrite16(bits_to_send, dev.virtbase);
 	}
 
-	dev.columns = *columns;
+	dev.columns = columns;
 }
 
 
