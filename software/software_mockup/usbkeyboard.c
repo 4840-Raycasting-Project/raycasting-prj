@@ -2,6 +2,9 @@
 
 #include <stdio.h>
 #include <stdlib.h> 
+#include <stdbool.h>
+
+#define IDVENDOR 0x0079
 
 /* References on libusb 1.0 and the USB HID/keyboard protocol
  *
@@ -54,7 +57,7 @@ struct libusb_device_handle *openkeyboard(uint8_t *endpoint_address) {
     */
 
     /*temporary WA using the idVendor of device descriptor since keyboard has an overlapping interface with controller*/
-    if (desc.bDeviceClass == LIBUSB_CLASS_PER_INTERFACE && desc.idVendor == 0x0079) {
+    if (desc.bDeviceClass == LIBUSB_CLASS_PER_INTERFACE && desc.idVendor == IDVENDOR) {
 
       struct libusb_config_descriptor *config;
       libusb_get_config_descriptor(dev, 0, &config);
@@ -121,4 +124,13 @@ struct libusb_device_handle *openkeyboard(uint8_t *endpoint_address) {
 
   //return keyboard;
   return controller;
+}
+
+
+bool is_key_pressed(int x, uint8_t key, uint8_t keycode[6]) {
+	
+	if(keycode[x] == key)
+		return true;
+
+	return false;
 }
