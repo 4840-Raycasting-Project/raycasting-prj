@@ -33,8 +33,8 @@ TODO:
 // size of tile (wall height) - best to make some power of 2
 #define TILE_SIZE 64
 #define WALL_HEIGHT 64
-#define PROJECTIONPLANEWIDTH 1024
-#define PROJECTIONPLANEHEIGHT 768
+#define PROJECTIONPLANEWIDTH 640
+#define PROJECTIONPLANEHEIGHT 480
 #define ANGLE60 PROJECTIONPLANEWIDTH
 #define ANGLE30 (ANGLE60/2)
 #define ANGLE15 (ANGLE30/2)
@@ -107,7 +107,7 @@ int main() {
 
     static const char filename[] = "/dev/column_decoder";
 
-	printf("VGA ball Userspace program started\n");
+	printf("Raycaster Userspace program started\n");
 
 	if ( (column_decoder_fd = open(filename, O_RDWR)) == -1) {
 		
@@ -194,8 +194,6 @@ int main() {
 		
 		usleep(20000);
     }
-
-    fb_clear_screen(); 
 	
 	free(fMap);
 	
@@ -384,7 +382,6 @@ void render() {
         //TODO replace below with a tuple system which will be decoded by software then hardware
 
         // DRAW THE WALL SLICE
-        float scaleFactor;
         float dist;
         int topOfWall;   // used to compute the top and bottom of the sliver that
         int bottomOfWall;   // will be the staring point of floor and ceiling

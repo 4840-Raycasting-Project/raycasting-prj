@@ -1,13 +1,14 @@
 ifneq (${KERNELRELEASE},)
 
+
+# KERNELRELEASE defined: we are being compiled as part of the Kernel
+	obj-m := column_decoder.o
+
+else
+
 CFLAGS = -Wall
 
 USERLAND_OBJECTS = raycaster.o usbkeyboard.o 
-
-# KERNELRELEASE defined: we are being compiled as part of the Kernel
-        obj-m := column_decoder.o
-
-else
 
 # We are being compiled as a module: use the Kernel build system
 
@@ -34,7 +35,8 @@ tar : $(TARFILE)
 $(TARFILE) : $(TARFILES)
 	tar zcfC $(TARFILE) .. $(TARFILES:%=software/%)
 
-raycaster.o : raycaster.c framebuffer.h usbkeyboard.h
+raycaster.o : raycaster.c usbkeyboard.h column_decoder.h
 usbkeyboard.o : usbkeyboard.c usbkeyboard.h
 
 endif 
+ 
