@@ -55,7 +55,7 @@ struct column_decoder_dev {
  */
 static void write_columns(columns_t *columns)
 {
-	__u16 bits_to_send = 0x0000;
+	__u16 bits_to_send;
 	__u16 i;
 	column_arg_t column_arg;
 
@@ -63,17 +63,18 @@ static void write_columns(columns_t *columns)
 		
 		column_arg = columns->column_args[i];
 
-		bits_to_send = 0x0000 & (column_arg.top_of_wall << 4);
+		bits_to_send = 0x0000 | (column_arg.top_of_wall << 4);
 		bits_to_send |= (column_arg.wall_side << 3);
 		bits_to_send |= column_arg.texture_type;
 		iowrite16(bits_to_send, dev.virtbase);
 
-		bits_to_send = 0x0000 & (column_arg.wall_height << 6);
+		bits_to_send = 0x0000 | (column_arg.wall_height << 6);
 		bits_to_send |= column_arg.texture_offset;
 		iowrite16(bits_to_send, dev.virtbase);
 	}
-
-	dev.columns = columns;
+	
+	//TODO copy column data manuallu
+	//dev.columns = columns;
 }
 
 
@@ -84,19 +85,19 @@ static void write_columns(columns_t *columns)
  */
 static long column_decoder_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
-	columns_t vla;
+	columns_t columns;
 
 	switch (cmd) {
 	case COLUMN_DECODER_WRITE_COLUMNS:
-		if (copy_from_user(&vla, (columns_t *) arg,
+		if (copy_from_user(&columns, (columns_t *) arg,
 				   sizeof(columns_t)))
 			return -EACCES;
-		write_columns(&vla);
+		write_columns(&columns);
 		break;
 /*
 	case COLUMN_DECODER_READ_ATTR:
-	  	vla.radius = dev.radius;
-		if (copy_to_user((column_decoder_arg_t *) arg, &vla,
+	  	columns.radius = dev.radius;
+		if (copy_to_user((column_decoder_arg_t *) arg, &columns,
 				 sizeof(column_decoder_arg_t)))
 			return -EACCES;
 		break;		

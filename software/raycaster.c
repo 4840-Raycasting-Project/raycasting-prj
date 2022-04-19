@@ -33,8 +33,11 @@ TODO:
 // size of tile (wall height) - best to make some power of 2
 #define TILE_SIZE 64
 #define WALL_HEIGHT 64
-#define PROJECTIONPLANEWIDTH 640
+
+//do not change - hardware precisely calibrated for these values - will crash system otherwise
+#define PROJECTIONPLANEWIDTH 640 
 #define PROJECTIONPLANEHEIGHT 480
+
 #define ANGLE60 PROJECTIONPLANEWIDTH
 #define ANGLE30 (ANGLE60/2)
 #define ANGLE15 (ANGLE30/2)
@@ -46,10 +49,11 @@ TODO:
 #define ANGLE5 (ANGLE30/6)
 #define ANGLE10 (ANGLE5*2)
 
-columns_t columns;
-
 //best to make this some power of 2 (with column decoder MUST be 1)
 #define COLUMN_WIDTH 1
+
+
+columns_t columns;
 
 // precomputed trigonometric tables
 float fSinTable[ANGLE360+1];
@@ -383,8 +387,8 @@ void render() {
 
         // DRAW THE WALL SLICE
         float dist;
-        int topOfWall;   // used to compute the top and bottom of the sliver that
-        int bottomOfWall;   // will be the staring point of floor and ceiling
+        uint16_t topOfWall;   // used to compute the top and bottom of the sliver that
+        uint16_t bottomOfWall;   // will be the staring point of floor and ceiling
 		uint8_t wall_side; //0=x, 1=y
 		uint8_t offset;
 		
