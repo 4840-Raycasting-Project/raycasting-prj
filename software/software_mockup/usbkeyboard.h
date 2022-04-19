@@ -2,6 +2,7 @@
 #define _USBKEYBOARD_H
 
 #include <libusb-1.0/libusb.h>
+#include <stdbool.h>
 
 #define USB_HID_KEYBOARD_PROTOCOL 1
 #define USB_HID_CONTROLLER_PROTOCOL 0
@@ -26,5 +27,6 @@ struct usb_keyboard_packet {
    space to store an endpoint address.  Returns NULL if no keyboard
    device was found. */
 extern struct libusb_device_handle *openkeyboard(uint8_t *);
+extern bool is_key_pressed(int, uint8_t, uint8_t[6]);
 
 #endif

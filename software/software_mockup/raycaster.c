@@ -24,12 +24,16 @@ TODO:
 #include <pthread.h>
 #include <stdbool.h> 
 #include <math.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 
 // size of tile (wall height) - best to make some power of 2
 #define TILE_SIZE 64
 #define WALL_HEIGHT 64
 #define PROJECTIONPLANEWIDTH 1024
-#define PROJECTIONPLANEHEIGHT 768
+#define PROJECTIONPLANEHEIGHT 768		//VGA module from lab3 being built on
 #define ANGLE60 PROJECTIONPLANEWIDTH
 #define ANGLE30 (ANGLE60/2)
 #define ANGLE15 (ANGLE30/2)
@@ -43,6 +47,10 @@ TODO:
 
 //best to make this some power of 2
 #define COLUMN_WIDTH 4
+
+
+//some controller defaults
+#define CONTROLLER_DEFAULT 0x7F
 
 // precomputed trigonometric tables
 float fSinTable[ANGLE360+1];
@@ -86,6 +94,8 @@ void render();
 void create_tables();
 float arc_to_rad(float);
 void handle_key_press(struct usb_keyboard_packet *, bool);
+void game_start_stop();
+void level_select();
 
 bool up_pressed, down_pressed, left_pressed, right_pressed;
 
@@ -99,9 +109,14 @@ int main() {
 
     create_tables();
 
+    level_select();
+
+    /*need to implement*/
+    game_start_stop();
+
     /* Open the keyboard */
     if ((keyboard = openkeyboard(&endpoint_address)) == NULL) {
-        fprintf(stderr, "Did not find a keyboard\n");
+   fprintf(stderr, "Did not find a keyboard\n");
         exit(1);
     }
 	
@@ -170,7 +185,7 @@ int main() {
 				fPlayerY = tmpPlayerY;
 			}
 		}
-		
+
 		//TODO only call if position changed
 		render();
 		
@@ -179,9 +194,9 @@ int main() {
 
     fb_clear_screen(); 
 	
-	free(fMap);
+    free(fMap);
 	
-	pthread_cancel(keyboard_thread);
+    pthread_cancel(keyboard_thread);
     pthread_join(keyboard_thread, NULL);
 
     return 0;
@@ -192,6 +207,9 @@ void *keyboard_thread_f(void *ignored) {
 	int transferred;
 	
 	struct usb_keyboard_packet packet;
+	char keystate[12];
+
+	//uint8_t controller_packet [4][2] = {{0x7f,0x00},{0x7f,0xff},{0x00,0x7f},{0xff,0x7f}};
 	
 	while(true) {
 		
@@ -200,11 +218,24 @@ void *keyboard_thread_f(void *ignored) {
 			      &transferred, 0);
 
         if (transferred == sizeof(packet)) {
-			
-			up_pressed = is_key_pressed(0x52, packet.keycode);
-			down_pressed = is_key_pressed(0x51, packet.keycode);
-			left_pressed = is_key_pressed(0x50, packet.keycode);
-			right_pressed = is_key_pressed(0x4F, packet.keycode);
+
+	      		//sprintf(keystate, "%02x %02x %02x %02x %02x %02x %02x", packet.modifiers, packet.keycode[0],
+		      	//packet.keycode[1],packet.keycode[2],packet.keycode[3],packet.keycode[4],packet.keycode[5]);
+	      		//fbputs(keystate, 6, 0);			//for debug
+
+			if (packet.keycode[1] != CONTROLLER_DEFAULT || packet.keycode[2] != CONTROLLER_DEFAULT) { 
+
+				up_pressed 	= is_key_pressed(2,0x00, packet.keycode);
+				down_pressed 	= is_key_pressed(2,0xff, packet.keycode);
+				left_pressed 	= is_key_pressed(1,0x00, packet.keycode);
+				right_pressed 	= is_key_pressed(1,0xff, packet.keycode);
+			}
+			else {
+				up_pressed 	= false;
+				down_pressed 	= false;
+				left_pressed 	= false;
+				right_pressed 	= false;
+			}
 		}
 	}
   
@@ -404,7 +435,7 @@ void render() {
 
         if(bottomOfWall >= PROJECTIONPLANEHEIGHT)
             bottomOfWall = PROJECTIONPLANEHEIGHT - 1;
-        
+
         fb_draw_column(castColumn, topOfWall, COLUMN_WIDTH, projectedWallHeight, wall_side, offset);
 
         // TRACE THE NEXT RAY
@@ -412,6 +443,35 @@ void render() {
         if (castArc >= ANGLE360)
             castArc -= ANGLE360;
     }
+}
+
+void game_start_stop(){
+
+	for (int i=0;i<5;i++){
+		usleep(500000);	
+		fbputs("STARTING GAME",11,25);
+		usleep(500000);	
+    		fb_clear_screen();
+	}
+}
+
+void level_select() {
+
+	/*
+ 	 * CHOOSE DIFFICULTY LEVEL
+	 * 1. MUDD
+	 * 2. CEPSR
+	 * 3. PUPIN
+	 * 4. HAVEMAYER
+	 * 5. KENT
+	 *
+	 * this should be displayed on the screen with text highlighting
+	 * default highlights MUDD
+	 * scroll up and down with up and down keys
+	 * keep internal counter for level highlighted
+	 * when enter is hit, chose map and render
+	 */
+
 }
 
 void create_tables() {
