@@ -26,11 +26,11 @@ module column_decoder(input logic clk,
     logic [2:0]      col_write = 3'b0;
     logic            new_columns_ready = 1'b0;
 
-    logic [12:0]     cur_col_first_write_stage_data;
+    logic [13:0]     cur_col_first_write_stage_data;
 
     logic [9:0]  colnum [2:0];
-    logic [27:0] new_coldata [2:0];
-    logic [27:0] col_data [2:0];
+    logic [28:0] new_coldata [2:0];
+    logic [28:0] col_data [2:0];
 
     logic [2:0] texture_type_select = 1'b0;
     logic [5:0] texture_row_select = 6'b0;
@@ -44,7 +44,10 @@ module column_decoder(input logic clk,
     logic       s2_pixel_wall_dir = 1'b0;
     logic [2:0] s2_texture_type = 2'b1;
     logic [5:0] s2_texture_offset = 6'b0;
-    logic [8:0] s2_top_of_wall = 9'b1; 
+    logic [8:0] s2_top_of_wall = 9'b1;
+     
+    logic       s2_switch_wall_height_sf;
+    logic [8:0] s2_wall_height_or_sf;
 
     logic [2:0]  s3_pixel_type = 3'b0; //0: ceiling, 1: wall, 2: floor
     logic        s3_pixel_wall_dir = 1'b0;
@@ -150,8 +153,12 @@ module column_decoder(input logic clk,
             s2_texture_type <= col_data[col_module_index_to_read][17:15];
             s2_texture_offset <= col_data[col_module_index_to_read][5:0];
             s2_top_of_wall <= col_data[col_module_index_to_read][27:19];
-
-            sf_wall_height <= col_data[col_module_index_to_read][14:6]; //load scaling factor
+            
+            s2_switch_wall_height_sf <= col_data[col_module_index_to_read][28];
+            s2_wall_height_or_sf <= col_data[col_module_index_to_read][14:6];
+            
+            if(col_data[col_module_index_to_read][28])
+                sf_wall_height <= col_data[col_module_index_to_read][14:6]; //load scaling factor
         end
         
 
@@ -166,7 +173,11 @@ module column_decoder(input logic clk,
            
             texture_type_select <= s2_texture_type;
             texture_col_select <= s2_texture_offset;
-            texture_row_select <= ((vcount_1_ahead - s2_top_of_wall) * scaling_factor) >> 4'ha;
+            
+            if(s2_switch_wall_height_sf)
+                texture_row_select <= ((vcount_1_ahead - s2_top_of_wall) * scaling_factor) >> 4'ha;
+            else
+                texture_row_select <= ((vcount_1_ahead - s2_top_of_wall) * s2_wall_height_or_sf) >> 4'ha;
         
         end else
             s3_pixel_type <= s2_pixel_type;
@@ -228,12 +239,12 @@ endmodule
 module columns(
     input logic clk50, reset, write,
     input logic [9:0] col_num,
-    input logic [27:0] new_col_data,
-    output logic [27:0] col_data
+    input logic [28:0] new_col_data,
+    output logic [28:0] col_data
 );
 
     //declare array https://www.chipverify.com/verilog/verilog-arrays
-    logic [27:0] columns [639:0];
+    logic [28:0] columns [639:0];
 
     //write if necc + reset zeroes it all out
     integer i;
@@ -241,7 +252,7 @@ module columns(
     always_ff @(posedge clk50)
         if (reset) begin
             for (i=10'h0; i<10'h280; i=i+10'h1) 
-                columns[i] <= 28'b00;
+                columns[i] <= 29'b00;
 
         end else if(write) begin
             columns[col_num] <= new_col_data;
