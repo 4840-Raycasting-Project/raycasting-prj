@@ -6,7 +6,7 @@
 
 typedef struct {
 
-  __u16 top_of_wall;
+  short top_of_wall; //signed
   __u8 wall_side;
   __u8 texture_type;
 

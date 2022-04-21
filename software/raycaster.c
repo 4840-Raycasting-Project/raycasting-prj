@@ -52,7 +52,7 @@ TODO:
 //best to make this some power of 2 (with column decoder MUST be 1)
 #define COLUMN_WIDTH 1
 
-
+ 
 columns_t columns;
 
 // precomputed trigonometric tables
@@ -196,7 +196,7 @@ int main() {
 		//TODO only call if position changed
 		render();
 		
-		usleep(20000);
+		usleep(16667); //60fps
     }
 	
 	free(fMap);
@@ -416,8 +416,9 @@ void render() {
 
         // correct distance (compensate for the fishbown effect)
         dist /= fFishTable[castColumn];
+				
         // projected_wall_height/wall_height = fPlayerDistToProjectionPlane/dist;
-        int projectedWallHeight = (int)(WALL_HEIGHT * (float)fPlayerDistanceToTheProjectionPlane / dist);
+        short projectedWallHeight = (short)(WALL_HEIGHT * (float)fPlayerDistanceToTheProjectionPlane / dist);
         bottomOfWall = fProjectionPlaneYCenter + (int)(projectedWallHeight * 0.5F);
         topOfWall = PROJECTIONPLANEHEIGHT - bottomOfWall;
 

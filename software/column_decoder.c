@@ -57,23 +57,30 @@ static void write_columns(columns_t *columns)
 {
 	__u16 bits_to_send;
 	__u16 i;
+	__u16 adjusted_wall_height;
 	column_arg_t column_arg;
 
 	for(i=0; i<640; i++) {
 		
 		column_arg = columns->column_args[i];
-
-		bits_to_send = 0x0000 | (column_arg.top_of_wall << 4);
-		bits_to_send |= (column_arg.wall_side << 3);
-		bits_to_send |= column_arg.texture_type;
-		iowrite16(bits_to_send, dev.virtbase);
-
-		bits_to_send = 0x0000 | (column_arg.wall_height << 6);
+		
+		//adjusted_wall_height = column_arg.wall_height >= 480 ? 480 : column_arg.wall_height;
+		
+		bits_to_send = 0x0000 | (column_arg.wall_side << 9);
+		bits_to_send |= (column_arg.texture_type << 6);
 		bits_to_send |= column_arg.texture_offset;
 		iowrite16(bits_to_send, dev.virtbase);
+		
+		iowrite16(column_arg.wall_height, dev.virtbase);
+		
+		iowrite16(column_arg.top_of_wall, dev.virtbase);
+		
+		//scaling factor
+		bits_to_send = 0x0000 | ((64 << 9) / column_arg.wall_height);
+		iowrite16(bits_to_send, dev.virtbase);		
 	}
 	
-	//TODO copy column data manuallu
+	//TODO copy column data manually
 	//dev.columns = columns;
 }
 
