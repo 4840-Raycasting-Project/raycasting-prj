@@ -6,8 +6,6 @@
  * Columbia University
 
     TODO:
-    1. Fix timing issues for column retrieval
-    2. Remove scaling factors modules completely
     3. Ceiling and floor gradients / colors
     4. Blackout screen toggle
     5. Text module
@@ -49,10 +47,6 @@ module column_decoder(input logic clk,
     logic [5:0] texture_col_select = 6'b0;
     logic [23:0] cur_texture_rgb_vals = {8'hff, 8'hff, 8'hff}; //output
 
-    /*
-    logic [8:0]  sf_wall_height = 9'b1;
-    logic [16:0] scaling_factor;
-    */
 
     logic [2:0] pixel_type = 3'b0; //0: ceiling, 1: wall, 2: floor
     logic       pixel_wall_dir = 1'b0;
@@ -68,12 +62,7 @@ module column_decoder(input logic clk,
         texture_col_select, 
         cur_texture_rgb_vals
     );
-    /*
-    scaling_factors sf0 (
-        sf_wall_height,
-        scaling_factor
-    );
-    */
+
     vga_counters counters(.clk50(clk), .*);
 
     always_ff @(posedge clk) begin
@@ -149,7 +138,7 @@ module column_decoder(input logic clk,
     //pipeline stage 3 - use column data to set texture registers
     //always_ff @(posedge clk) 
         
-        //ceil - https://stackoverflow.com/questions/39374958/casting-to-a-fixed-width-signed-number
+        //ceil
         if(vcount_1_ahead < col_data[col_module_index_to_read][41:26] && !col_data[col_module_index_to_read][41]) //top of wall
             pixel_type <= 2'h0;
         
@@ -251,25 +240,6 @@ module columns(
     end
 
 endmodule
-/*
-//load preprocessed scaling factors
-module scaling_factors(
-    input logic [8:0] wall_height,
-    output logic [16:0] scaling_factor
-);
-
-    logic [16:0] scaling_factors [479:0];
-    integer i;
-
-    initial begin
-        //$display("Loading scaling factors.");
-        $readmemb("sf.mem", scaling_factors);
-    end
-
-    assign scaling_factor = scaling_factors[(wall_height - 9'b1)];
-
-endmodule
-*/
 
 //types: 0: bluestone, 1: colorstone, 2: eagle, 3: greystone, 4: mossy, 5: purplestone, 6: redbrick, 7: wood
 module textures(
@@ -288,7 +258,6 @@ module textures(
     end
 
     assign texture_data = textures[{texture_type, row, col}];
-
 
 endmodule
 
