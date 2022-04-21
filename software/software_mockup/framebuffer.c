@@ -140,7 +140,7 @@ void fb_draw_column(int column_num, int top_of_wall, int column_width, int proje
  * Draw the given character at the given row/column.
  * fbopen() must be called first.
  */
-void fbputchar(char c, int row, int col) {
+void fbputchar(char c, int row, int col, int highlight) {
 	
 	int x, y;
   
@@ -166,33 +166,71 @@ void fbputchar(char c, int row, int col) {
 			
 			if (pixels & mask) {	
 			
-				pixel[0] = 255; /* Red */
-				pixel[1] = 255; /* Green */
-				pixel[2] = 255; /* Blue */
-				pixel[3] = 0;
+				if (highlight == 1){
+					pixel[0] = 0; /* Red */
+					pixel[1] = 0; /* Green */
+					pixel[2] = 0; /* Blue */
+					pixel[3] = 0;
+				}
+				else{
+					
+					pixel[0] = 255; /* Red */
+					pixel[1] = 255; /* Green */
+					pixel[2] = 255; /* Blue */
+					pixel[3] = 0;
+				}
 			} 
 			else {
 				
-				pixel[0] = 0;
-				pixel[1] = 0;
-				pixel[2] = 0;
-				pixel[3] = 0;
+				
+				if (highlight == 1){
+					pixel[0] = 255; /* Red */
+					pixel[1] = 255; /* Green */
+					pixel[2] = 255; /* Blue */
+					pixel[3] = 0;
+				}
+				else{
+					
+					pixel[0] = 0; /* Red */
+					pixel[1] = 0; /* Green */
+					pixel[2] = 0; /* Blue */
+					pixel[3] = 0;
+				}
+				
 			}
 			
 			pixel += 4;
 			
 			if (pixels & mask) {
 				
-				pixel[0] = 255; /* Red */
-				pixel[1] = 255; /* Green */
-				pixel[2] = 255; /* Blue */
-				pixel[3] = 0;
+				if (highlight == 1){
+					pixel[0] = 0; /* Red */
+					pixel[1] = 0; /* Green */
+					pixel[2] = 0; /* Blue */
+					pixel[3] = 0;
+				}
+				else{
+					
+					pixel[0] = 255; /* Red */
+					pixel[1] = 255; /* Green */
+					pixel[2] = 255; /* Blue */
+					pixel[3] = 0;
+				}
 			} 
 			else {
-				pixel[0] = 0;
-				pixel[1] = 0;
-				pixel[2] = 0;
-				pixel[3] = 0;
+				if (highlight == 1){
+					pixel[0] = 255; /* Red */
+					pixel[1] = 255; /* Green */
+					pixel[2] = 255; /* Blue */
+					pixel[3] = 0;
+				}
+				else{
+					
+					pixel[0] = 0; /* Red */
+					pixel[1] = 0; /* Green */
+					pixel[2] = 0; /* Blue */
+					pixel[3] = 0;
+				}
 		   }
 		   
 		   pixel += 4;
@@ -208,12 +246,12 @@ void fbputchar(char c, int row, int col) {
  * Draw the given string at the given row/column.
  * String must fit on a single line: wrap-around is not handled.
  */
-void fbputs(const char *s, int row, int col)
+void fbputs(const char *s, int row, int col, int highlight)
 {
   char c;
   
   while ((c = *s++) != 0 && col < max_cols)
-	  fbputchar(c, row, col++);
+	  fbputchar(c, row, col++, highlight);
 }
 
 static unsigned char font[] = {

@@ -52,6 +52,15 @@ TODO:
 //some controller defaults
 #define CONTROLLER_DEFAULT 0x7F
 
+//number of levels
+#define NUMLEVELS 5
+ 
+//default selected level for the game
+int levels = 0;
+
+//game levels
+char *level[NUMLEVELS] = {"1.MUDD", "2.CESPR", "3.PUPIN", "4.HAVEMAYER", "5.KENT"}; 
+
 // precomputed trigonometric tables
 float fSinTable[ANGLE360+1];
 float fISinTable[ANGLE360+1];
@@ -97,7 +106,7 @@ void handle_key_press(struct usb_keyboard_packet *, bool);
 void game_start_stop();
 void level_select();
 
-bool up_pressed, down_pressed, left_pressed, right_pressed;
+bool up_pressed, down_pressed, left_pressed, right_pressed, enter_pressed;
 
 pthread_t keyboard_thread;
 void *keyboard_thread_f(void *);
@@ -109,10 +118,6 @@ int main() {
 
     create_tables();
 
-    level_select();
-
-    /*need to implement*/
-    game_start_stop();
 
     /* Open the keyboard */
     if ((keyboard = openkeyboard(&endpoint_address)) == NULL) {
@@ -121,8 +126,17 @@ int main() {
     }
 	
 	//start keyboard thread
-	pthread_create(&keyboard_thread, NULL, keyboard_thread_f, NULL);
+   pthread_create(&keyboard_thread, NULL, keyboard_thread_f, NULL);
+
+    /*basic logic implemented, need to work on levels maze*/
+    level_select();
+
+    game_start_stop();
+
 	
+    fb_clear_screen();
+
+    usleep(20000);
 	render();
 	
 	int map_size = MAP_HEIGHT * MAP_WIDTH;
@@ -219,23 +233,31 @@ void *keyboard_thread_f(void *ignored) {
 
         if (transferred == sizeof(packet)) {
 
-	      		//sprintf(keystate, "%02x %02x %02x %02x %02x %02x %02x", packet.modifiers, packet.keycode[0],
-		      	//packet.keycode[1],packet.keycode[2],packet.keycode[3],packet.keycode[4],packet.keycode[5]);
-	      		//fbputs(keystate, 6, 0);			//for debug
+	      		sprintf(keystate, "%02x %02x %02x %02x %02x %02x %02x", packet.modifiers, packet.keycode[0],
+		      	packet.keycode[1],packet.keycode[2],packet.keycode[3],packet.keycode[4],packet.keycode[5]);
+	      		//fbputs(keystate, 6, 0,1);			//for debug
 
-			if (packet.keycode[1] != CONTROLLER_DEFAULT || packet.keycode[2] != CONTROLLER_DEFAULT) { 
+			printf("%s\n",keystate);
 
-				up_pressed 	= is_key_pressed(2,0x00, packet.keycode);
-				down_pressed 	= is_key_pressed(2,0xff, packet.keycode);
-				left_pressed 	= is_key_pressed(1,0x00, packet.keycode);
-				right_pressed 	= is_key_pressed(1,0xff, packet.keycode);
-			}
-			else {
+			//if (packet.keycode[1] != CONTROLLER_DEFAULT || packet.keycode[2] != CONTROLLER_DEFAULT) { 
+
+				//up_pressed 	= is_key_pressed(2,0x00, packet.keycode);
+				//down_pressed 	= is_key_pressed(2,0xff, packet.keycode);
+				//left_pressed 	= is_key_pressed(1,0x00, packet.keycode);
+				//right_pressed 	= is_key_pressed(1,0xff, packet.keycode);
+
+				up_pressed 	= is_key_pressed(0x52, packet.keycode);
+				down_pressed 	= is_key_pressed(0x51, packet.keycode);
+				left_pressed 	= is_key_pressed(0x50, packet.keycode);
+				right_pressed 	= is_key_pressed(0x4f, packet.keycode);
+				enter_pressed   = is_key_pressed(0x28, packet.keycode);
+			//}
+			/*else {
 				up_pressed 	= false;
 				down_pressed 	= false;
 				left_pressed 	= false;
 				right_pressed 	= false;
-			}
+			}*/
 		}
 	}
   
@@ -447,9 +469,10 @@ void render() {
 
 void game_start_stop(){
 
+    	fb_clear_screen();
 	for (int i=0;i<5;i++){
 		usleep(500000);	
-		fbputs("STARTING GAME",11,25);
+		fbputs("STARTING GAME",11,25,1);
 		usleep(500000);	
     		fb_clear_screen();
 	}
@@ -471,6 +494,40 @@ void level_select() {
 	 * keep internal counter for level highlighted
 	 * when enter is hit, chose map and render
 	 */
+
+	 //sprintf(keystate, "%02x %02x %02x %02x %02x %02x %02x", packet.modifiers, packet.keycode[0],
+	 //packet.keycode[1],packet.keycode[2],packet.keycode[3],packet.keycode[4],packet.keycode[5]);
+	 //fbputs(keystate, 6, 0);			//for debug
+
+	
+
+	
+	 while (1) {
+
+		
+		if(up_pressed) {
+			if (levels - 1 == -1)
+				continue;
+			levels--;
+			printf("levels: %d\n",levels);
+		}
+		else if(down_pressed) {
+			if (levels + 1 == NUMLEVELS)
+				continue;
+			levels++;
+			printf("levels: %d\n",levels);
+		}
+		else if (enter_pressed)
+			break;
+
+		 fbputs(level[0],10,25,levels == 0 ? 1 : 0);
+		 fbputs(level[1],11,25,levels == 1 ? 1 : 0);
+		 fbputs(level[2],12,25,levels == 2 ? 1 : 0);
+		 fbputs(level[3],13,25,levels == 3 ? 1 : 0);
+		 fbputs(level[4],14,25,levels == 4 ? 1 : 0);
+
+		 usleep(100000);
+ 	 }
 
 }
 
