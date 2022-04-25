@@ -70,7 +70,7 @@ float fYStepTable[ANGLE360+1];
 int fPlayerX = 100; int tmpPlayerX;
 int fPlayerY = 160; int tmpPlayerY;
 int fPlayerArc = ANGLE0;
-int fPlayerDistanceToTheProjectionPlane = 277;
+int fPlayerDistanceToTheProjectionPlane = 677;
 int fPlayerHeight = 32;
 int fPlayerSpeed = 8;
 int fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
@@ -383,8 +383,6 @@ void render() {
             }
         }
 
-        //TODO replace below with a tuple system which will be decoded by software then hardware
-
         // DRAW THE WALL SLICE
         float dist;
         uint16_t topOfWall;   // used to compute the top and bottom of the sliver that
@@ -416,20 +414,29 @@ void render() {
 
         // correct distance (compensate for the fishbown effect)
         dist /= fFishTable[castColumn];
+		
+		//0 distance makes no sense for below calcs
+		if(dist == 0.0)
+			dist = .001;
 				
         // projected_wall_height/wall_height = fPlayerDistToProjectionPlane/dist;
-        short projectedWallHeight = (short)(WALL_HEIGHT * (float)fPlayerDistanceToTheProjectionPlane / dist);
+        int projectedWallHeight = (int)(WALL_HEIGHT * (float)fPlayerDistanceToTheProjectionPlane / dist);
+		projectedWallHeight = projectedWallHeight > 32767 ? 32767 : projectedWallHeight;
+		
+		
         bottomOfWall = fProjectionPlaneYCenter + (int)(projectedWallHeight * 0.5F);
+		bottomOfWall = bottomOfWall > 32767 ? 32767 : bottomOfWall;
+		
         topOfWall = PROJECTIONPLANEHEIGHT - bottomOfWall;
-
-        if(bottomOfWall >= PROJECTIONPLANEHEIGHT)
-            bottomOfWall = PROJECTIONPLANEHEIGHT - 1;
 
         columns.column_args[castColumn].top_of_wall = topOfWall;
         columns.column_args[castColumn].wall_side = wall_side;
         columns.column_args[castColumn].texture_type = 1; //TODO HAVE TO MAKE TEXTURES PART OF MAP
-        columns.column_args[castColumn].wall_height = projectedWallHeight;
+        columns.column_args[castColumn].wall_height = (short)projectedWallHeight;
         columns.column_args[castColumn].texture_offset = offset;
+		
+		if(!(short)projectedWallHeight)
+			printf("pwh %d %d", projectedWallHeight, dist);
 
         // TRACE THE NEXT RAY
         castArc += COLUMN_WIDTH;
