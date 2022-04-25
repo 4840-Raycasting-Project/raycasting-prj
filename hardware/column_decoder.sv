@@ -181,11 +181,11 @@ module column_decoder(input logic clk,
 
         if (VGA_BLANK_n) begin 
 
-            if(pixel_type == 2'h0) //ceil TODO gradient
-                {VGA_R, VGA_G, VGA_B} = {8'h32, 8'h32, 8'h32};
+            if(pixel_type == 2'h0) //ceil
+                {VGA_R, VGA_G, VGA_B} = {(vcount[8:1] + 8'h00), (vcount[8:1] + 8'h00), 8'hff};
 
             else if(pixel_type == 2'h2) //floor TODO gradient
-                {VGA_R, VGA_G, VGA_B} = {8'ha, 8'ha, 8'ha};
+                {VGA_R, VGA_G, VGA_B} = {8'h40, 8'h40, 8'h40};
 
             else if(!pixel_wall_dir) //wall faded
                 {VGA_R, VGA_G, VGA_B} = {(cur_texture_rgb_vals[23:16]>>1), (cur_texture_rgb_vals[15:8]>>1), (cur_texture_rgb_vals[7:0]>>1)};
@@ -210,10 +210,8 @@ module columns(
     logic [41:0] columns [639:0];
     logic [15:0] sfs [639:0]; //scaling factors
 
-    //write if necc + reset zeroes it all out
     integer i;
 
-    
     initial begin
         for (i=10'h0; i<10'h280; i=i+10'h1) begin 
             columns[i] <= 42'b0;
