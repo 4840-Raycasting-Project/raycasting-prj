@@ -8,7 +8,7 @@ else
 
 CFLAGS = -Wall
 
-USERLAND_OBJECTS = raycaster.o usbkeyboard.o 
+USERLAND_OBJECTS = raycaster.o usbdevices.o 
 
 # We are being compiled as a module: use the Kernel build system
 
@@ -27,7 +27,7 @@ clean:
 	${MAKE} -C ${KERNEL_SOURCE} SUBDIRS=${PWD} clean
 	${RM} raycaster
 
-TARFILES = Makefile README column_decoder.h column_decoder.c raycaster.c usbkeyboard.c
+TARFILES = Makefile README column_decoder.h column_decoder.c raycaster.c usbdevices.c
 TARFILE = project.tar.gz
 .PHONY : tar
 tar : $(TARFILE)
@@ -35,8 +35,8 @@ tar : $(TARFILE)
 $(TARFILE) : $(TARFILES)
 	tar zcfC $(TARFILE) .. $(TARFILES:%=software/%)
 
-raycaster.o : raycaster.c usbkeyboard.h column_decoder.h
-usbkeyboard.o : usbkeyboard.c usbkeyboard.h
+raycaster.o : raycaster.c usbdevices.h column_decoder.h
+usbdevices.o : usbdevices.c usbdevices.h
 
 endif 
  

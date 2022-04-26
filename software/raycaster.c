@@ -20,7 +20,7 @@ TODO:
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "usbkeyboard.h"
+#include "usbdevices.h"
 #include <pthread.h>
 #include <stdbool.h> 
 #include <math.h>
@@ -52,6 +52,7 @@ TODO:
 //best to make this some power of 2 (with column decoder MUST be 1)
 #define COLUMN_WIDTH 1
 
+#define CONTROLLER_DEFAULT 0x7F
  
 columns_t columns;
 
@@ -90,7 +91,9 @@ static const uint8_t MAP_HEIGHT = 12;
 uint8_t *fMap;
 
 struct libusb_device_handle *keyboard;
-uint8_t endpoint_address;
+struct libusb_device_handle *controller;
+uint8_t endpoint_address_kb;
+uint8_t endpoint_address_ctr;
 
 pthread_mutex_t kp_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t kp_cond = PTHREAD_COND_INITIALIZER;
@@ -102,9 +105,13 @@ float arc_to_rad(float);
 void handle_key_press(struct usb_keyboard_packet *, bool);
 
 bool up_pressed, down_pressed, left_pressed, right_pressed;
+bool up_ctr_pressed, down_ctr_pressed, left_ctr_pressed, right_ctr_pressed;
 
 pthread_t keyboard_thread;
 void *keyboard_thread_f(void *);
+
+pthread_t controller_thread;
+void *controller_thread_f(void *);
 
 int column_decoder_fd;
 
@@ -125,13 +132,18 @@ int main() {
     create_tables();
 
     /* Open the keyboard */
-    if ((keyboard = openkeyboard(&endpoint_address)) == NULL) {
+    if ((keyboard = openkeyboard(&endpoint_address_kb)) == NULL) {
         fprintf(stderr, "Did not find a keyboard\n");
         exit(1);
     }
 	
-	//start keyboard thread
+    if ((controller = opencontroller(&endpoint_address_ctr)) == NULL) {
+        fprintf(stderr, "Did not find a controller\n");
+    }	
+	
+	//start keyboard and controller threads
 	pthread_create(&keyboard_thread, NULL, keyboard_thread_f, NULL);
+	pthread_create(&controller_thread, NULL, controller_thread_f, NULL);
 	
 	render();
 	
@@ -140,18 +152,19 @@ int main() {
     while(true) {
 
 		pthread_mutex_lock(&kp_mutex);
-		while(!up_pressed && !down_pressed && !left_pressed && !right_pressed){		
+		while(!up_pressed && !down_pressed && !left_pressed && !right_pressed 
+			&& !up_ctr_pressed && !down_ctr_pressed && !left_ctr_pressed && !right_ctr_pressed) {		
 			pthread_cond_wait(&kp_cond,&kp_mutex);
 		}
 
 		// rotate left
-		if(left_pressed) {
+		if(left_pressed || left_ctr_pressed) {
 			if((fPlayerArc -= ANGLE5) < ANGLE0)
 				fPlayerArc += ANGLE360;
 		}
 		
 		// rotate right
-		else if(right_pressed) {
+		else if(right_pressed || right_ctr_pressed) {
 			if((fPlayerArc += ANGLE5) >= ANGLE360)
 				fPlayerArc -= ANGLE360;
 		}
@@ -169,7 +182,7 @@ int main() {
 		float playerYDir = fSinTable[fPlayerArc];
 
 		// move forward
-		if(up_pressed) {
+		if(up_pressed || up_ctr_pressed) {
 			
 			tmpPlayerX = fPlayerX + (int)(playerXDir * fPlayerSpeed);
 			tmpPlayerY = fPlayerY + (int)(playerYDir * fPlayerSpeed);
@@ -184,7 +197,7 @@ int main() {
 		}
 		
 		// move backward
-		else if(down_pressed) {
+		else if(down_pressed || down_ctr_pressed) {
 			
 			tmpPlayerX = fPlayerX - (int)(playerXDir * fPlayerSpeed);
 			tmpPlayerY = fPlayerY - (int)(playerYDir * fPlayerSpeed);
@@ -209,6 +222,9 @@ int main() {
 	
 	pthread_cancel(keyboard_thread);
     pthread_join(keyboard_thread, NULL);
+	
+	pthread_cancel(controller_thread);
+    pthread_join(controller_thread, NULL);
 
     return 0;
 }
@@ -221,7 +237,7 @@ void *keyboard_thread_f(void *ignored) {
 	
 	while(true) {
 		
-		libusb_interrupt_transfer(keyboard, endpoint_address,
+		libusb_interrupt_transfer(keyboard, endpoint_address_kb,
 			      (unsigned char *) &packet, sizeof(packet),
 			      &transferred, 0);
 
@@ -233,6 +249,44 @@ void *keyboard_thread_f(void *ignored) {
 			down_pressed = is_key_pressed(0x51, packet.keycode);
 			left_pressed = is_key_pressed(0x50, packet.keycode);
 			right_pressed = is_key_pressed(0x4F, packet.keycode);
+			
+			pthread_cond_signal(&kp_cond);
+			pthread_mutex_unlock(&kp_mutex);
+		}
+	}
+  
+	return NULL;
+}
+
+void *controller_thread_f(void *ignored) {
+	
+	int transferred;
+	
+	struct usb_keyboard_packet packet;
+	
+	while(true) {
+		
+		libusb_interrupt_transfer(controller, endpoint_address_ctr,
+			      (unsigned char *) &packet, sizeof(packet),
+			      &transferred, 0);
+
+        if (transferred == sizeof(packet)) {
+			
+			pthread_mutex_lock(&kp_mutex);
+			
+			if (packet.keycode[1] != CONTROLLER_DEFAULT || packet.keycode[2] != CONTROLLER_DEFAULT) { 
+
+				up_ctr_pressed 		= is_controller_key_pressed(2, 0x00, packet.keycode);
+				down_ctr_pressed 	= is_controller_key_pressed(2, 0xff, packet.keycode);
+				left_ctr_pressed 	= is_controller_key_pressed(1, 0x00, packet.keycode);
+				right_ctr_pressed 	= is_controller_key_pressed(1, 0xff, packet.keycode);
+			}
+			else {
+				up_ctr_pressed 	= false;
+				down_ctr_pressed 	= false;
+				left_ctr_pressed 	= false;
+				right_ctr_pressed 	= false;
+			}
 			
 			pthread_cond_signal(&kp_cond);
 			pthread_mutex_unlock(&kp_mutex);
