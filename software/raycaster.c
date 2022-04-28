@@ -3,15 +3,13 @@ Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
 TODO:
 
-1. Texture mapping
+1. Textures for wall - global constants
+2. blackout screen function
+3. fbputchar -> tile buffer hardware char render
+4. port in game logic and menu functionality start and complete a level
+5. jumping demo
 
-3. Bit shift operations for speedup
-4. Other speedup optimizations
-
-6. Thread to update the future hardware
-7. usb controller input?
 8. sprites?
-9. Floor / ceiling color gradients or (texture -> harder)
 
 */
 
@@ -20,7 +18,7 @@ TODO:
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "usbkeyboard.h"
+#include "usbdevices.h"
 #include <pthread.h>
 #include <stdbool.h> 
 #include <math.h>
@@ -52,6 +50,8 @@ TODO:
 //best to make this some power of 2 (with column decoder MUST be 1)
 #define COLUMN_WIDTH 1
 
+#define CONTROLLER_DPAD_DEFAULT 0x7F
+#define CONTROLLER_BTN_DEFAULT 0xF
  
 columns_t columns;
 
@@ -71,8 +71,7 @@ int fPlayerX = 100; int tmpPlayerX;
 int fPlayerY = 160; int tmpPlayerY;
 int fPlayerArc = ANGLE0;
 int fPlayerDistanceToTheProjectionPlane = 677;
-int fPlayerHeight = 32;
-int fPlayerSpeed = 8;
+int fPlayerSpeed = 6;
 int fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
 
 // movement flag
@@ -82,7 +81,16 @@ bool fKeyLeft = false;
 bool fKeyRight = false;
 
 // 2 dimensional map
-static const uint8_t W = 1; // wall
+static const uint8_t B = 1; // bluestone
+static const uint8_t C = 2; // colorstone
+static const uint8_t E = 3; // eagle
+static const uint8_t G = 4; // greystone
+static const uint8_t M = 5; // mossy
+static const uint8_t P = 6; // purplestone
+static const uint8_t R = 7; // redbrick
+static const uint8_t W = 8; // wood
+
+
 static const uint8_t O = 0; // opening
 static const uint8_t MAP_WIDTH = 12;
 static const uint8_t MAP_HEIGHT = 12;
@@ -90,7 +98,12 @@ static const uint8_t MAP_HEIGHT = 12;
 uint8_t *fMap;
 
 struct libusb_device_handle *keyboard;
-uint8_t endpoint_address;
+struct libusb_device_handle *controller;
+uint8_t endpoint_address_kb;
+uint8_t endpoint_address_ctr;
+
+//pthread_mutex_t kp_mutex = PTHREAD_MUTEX_INITIALIZER;
+//pthread_cond_t kp_cond = PTHREAD_COND_INITIALIZER;
 
 //function signatures
 void render();
@@ -99,9 +112,17 @@ float arc_to_rad(float);
 void handle_key_press(struct usb_keyboard_packet *, bool);
 
 bool up_pressed, down_pressed, left_pressed, right_pressed;
+bool up_ctr_pressed, down_ctr_pressed, left_ctr_pressed, right_ctr_pressed;
+
+bool jump_pressed, jump_pressed_ctr, is_jumping;
+bool sched_jump_start;
+int  jump_frame;
 
 pthread_t keyboard_thread;
 void *keyboard_thread_f(void *);
+
+pthread_t controller_thread;
+void *controller_thread_f(void *);
 
 int column_decoder_fd;
 
@@ -122,31 +143,65 @@ int main() {
     create_tables();
 
     /* Open the keyboard */
-    if ((keyboard = openkeyboard(&endpoint_address)) == NULL) {
+    if ((keyboard = openkeyboard(&endpoint_address_kb)) == NULL) {
         fprintf(stderr, "Did not find a keyboard\n");
         exit(1);
     }
 	
-	//start keyboard thread
+    if ((controller = opencontroller(&endpoint_address_ctr)) == NULL) {
+        fprintf(stderr, "Did not find a controller\n");
+    }	
+	
+	//start keyboard and controller threads
 	pthread_create(&keyboard_thread, NULL, keyboard_thread_f, NULL);
+	pthread_create(&controller_thread, NULL, controller_thread_f, NULL);
 	
 	render();
 	
 	int map_size = MAP_HEIGHT * MAP_WIDTH;
 
     while(true) {
-
-		//uint8_t keycode = get_last_keycode(packet.keycode);
-		//char gameplay_key = get_gameplay_key(keycode);
-
+		
+		/*
+		pthread_mutex_lock(&kp_mutex);
+		while(!up_pressed && !down_pressed && !left_pressed && !right_pressed 
+			&& !up_ctr_pressed && !down_ctr_pressed && !left_ctr_pressed && !right_ctr_pressed) {		
+			pthread_cond_wait(&kp_cond,&kp_mutex);
+		}
+		*/
+		
+		//jump
+		if(sched_jump_start) {
+			
+			is_jumping = true;
+			jump_frame = 0;
+			sched_jump_start = false;
+		}
+		
+		if(is_jumping) {
+			
+			jump_frame++;
+			
+			fProjectionPlaneYCenter = (int) (PROJECTIONPLANEHEIGHT / 2) + (
+			
+				(.1 * (jump_frame - 32) * (jump_frame - 32)) - 100
+			);
+			
+			if(fProjectionPlaneYCenter >= (PROJECTIONPLANEHEIGHT / 2)) {
+				
+				fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
+				is_jumping = false;
+			}
+		}
+		
 		// rotate left
-		if(left_pressed) {
+		if(left_pressed || left_ctr_pressed) {
 			if((fPlayerArc -= ANGLE5) < ANGLE0)
 				fPlayerArc += ANGLE360;
 		}
 		
 		// rotate right
-		else if(right_pressed) {
+		else if(right_pressed || right_ctr_pressed) {
 			if((fPlayerArc += ANGLE5) >= ANGLE360)
 				fPlayerArc -= ANGLE360;
 		}
@@ -164,14 +219,14 @@ int main() {
 		float playerYDir = fSinTable[fPlayerArc];
 
 		// move forward
-		if(up_pressed) {
+		if(up_pressed || up_ctr_pressed) {
 			
 			tmpPlayerX = fPlayerX + (int)(playerXDir * fPlayerSpeed);
 			tmpPlayerY = fPlayerY + (int)(playerYDir * fPlayerSpeed);
 			
 			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
 
-			if(map_index < map_size && fMap[map_index] != W) {
+			if(map_index < map_size && !fMap[map_index]) {
 				
 				fPlayerX = tmpPlayerX;
 				fPlayerY = tmpPlayerY;
@@ -179,21 +234,22 @@ int main() {
 		}
 		
 		// move backward
-		else if(down_pressed) {
+		else if(down_pressed || down_ctr_pressed) {
 			
 			tmpPlayerX = fPlayerX - (int)(playerXDir * fPlayerSpeed);
 			tmpPlayerY = fPlayerY - (int)(playerYDir * fPlayerSpeed);
 			
 			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
 			
-			if(map_index < map_size && fMap[map_index] != W) {
+			if(map_index < map_size && !fMap[map_index]) {
 				
 				fPlayerX = tmpPlayerX;
 				fPlayerY = tmpPlayerY;
 			}
 		}
 		
-		//TODO only call if position changed
+		//pthread_mutex_unlock(&kp_mutex);		
+		
 		render();
 		
 		usleep(16667); //60fps
@@ -203,6 +259,9 @@ int main() {
 	
 	pthread_cancel(keyboard_thread);
     pthread_join(keyboard_thread, NULL);
+	
+	pthread_cancel(controller_thread);
+    pthread_join(controller_thread, NULL);
 
     return 0;
 }
@@ -211,20 +270,80 @@ void *keyboard_thread_f(void *ignored) {
 	
 	int transferred;
 	
+	bool prev_jump_state;
+	
 	struct usb_keyboard_packet packet;
 	
 	while(true) {
 		
-		libusb_interrupt_transfer(keyboard, endpoint_address,
+		libusb_interrupt_transfer(keyboard, endpoint_address_kb,
 			      (unsigned char *) &packet, sizeof(packet),
 			      &transferred, 0);
 
         if (transferred == sizeof(packet)) {
 			
-			up_pressed = is_key_pressed(0x52, packet.keycode);
-			down_pressed = is_key_pressed(0x51, packet.keycode);
-			left_pressed = is_key_pressed(0x50, packet.keycode);
-			right_pressed = is_key_pressed(0x4F, packet.keycode);
+			prev_jump_state = jump_pressed;
+			
+			//pthread_mutex_lock(&kp_mutex);
+			
+			up_pressed =    is_key_pressed(0x52, packet.keycode);
+			down_pressed =  is_key_pressed(0x51, packet.keycode);
+			left_pressed =  is_key_pressed(0x50, packet.keycode);
+			right_pressed = is_key_pressed(0x4f, packet.keycode);
+			jump_pressed =  is_key_pressed(0x2c, packet.keycode);
+			
+			if(jump_pressed && !is_jumping && !prev_jump_state)
+				sched_jump_start = true;
+			
+			//pthread_cond_signal(&kp_cond);
+			//pthread_mutex_unlock(&kp_mutex);
+		}
+	}
+  
+	return NULL;
+}
+
+void *controller_thread_f(void *ignored) {
+	
+	int transferred;
+	
+	bool prev_jump_state_ctr;
+	
+	struct usb_keyboard_packet packet;
+;	
+	while(true) {
+		
+		libusb_interrupt_transfer(controller, endpoint_address_ctr,
+			      (unsigned char *) &packet, sizeof(packet),
+			      &transferred, 0);
+
+        if (transferred == sizeof(packet)) {
+			
+			prev_jump_state_ctr = jump_pressed_ctr;
+
+			//pthread_mutex_lock(&kp_mutex);
+			
+			if (packet.keycode[1] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_BTN_DEFAULT) { 
+
+				up_ctr_pressed 		= is_controller_key_pressed(2, 0x00, packet.keycode);
+				down_ctr_pressed 	= is_controller_key_pressed(2, 0xff, packet.keycode);
+				left_ctr_pressed 	= is_controller_key_pressed(1, 0x00, packet.keycode);
+				right_ctr_pressed 	= is_controller_key_pressed(1, 0xff, packet.keycode);
+				jump_pressed_ctr	= is_controller_key_pressed(3, 0x2f, packet.keycode);
+				
+				if(jump_pressed_ctr && !is_jumping && !prev_jump_state_ctr)
+					sched_jump_start = true;
+			}
+			else {
+				up_ctr_pressed 	    = false;
+				down_ctr_pressed 	= false;
+				left_ctr_pressed 	= false;
+				right_ctr_pressed 	= false;
+				jump_pressed_ctr	= false;
+			}
+			
+			//pthread_cond_signal(&kp_cond);
+			//pthread_mutex_unlock(&kp_mutex);
 		}
 	}
   
@@ -243,6 +362,8 @@ void render() {
     float yIntersection;
     float distToNextXIntersection;
     float distToNextYIntersection;
+	
+	uint8_t textureH, textureV, texture;
 
     int xGridIndex;        // the current cell that the ray is in
     int yGridIndex;
@@ -320,7 +441,9 @@ void render() {
                     distToHorizontalGridBeingHit = __FLT_MAX__;
                     break;
                 }
-                else if ((fMap[yGridIndex*MAP_WIDTH + xGridIndex]) != O) {
+                else if (fMap[yGridIndex * MAP_WIDTH + xGridIndex]) {
+					
+					textureH = fMap[yGridIndex * MAP_WIDTH + xGridIndex] - 1;
                     distToHorizontalGridBeingHit  = (xIntersection-fPlayerX)*fICosTable[castArc];
                     break;
                 }
@@ -372,7 +495,9 @@ void render() {
                     distToVerticalGridBeingHit = __FLT_MAX__;
                     break;
                 }
-                else if ((fMap[yGridIndex * MAP_WIDTH + xGridIndex]) != O) {
+                else if (fMap[yGridIndex * MAP_WIDTH + xGridIndex]) {
+					
+					textureV = fMap[yGridIndex * MAP_WIDTH + xGridIndex] - 1;
                     distToVerticalGridBeingHit = (yIntersection - fPlayerY) * fISinTable[castArc];
                     break;
                 }
@@ -398,6 +523,7 @@ void render() {
             // the next function call (drawRayOnMap()) is not a part of raycating rendering part, 
             // it just draws the ray on the overhead map to illustrate the raycasting process
             dist = distToHorizontalGridBeingHit;
+			texture = textureH;
 			wall_side = 0;
 			offset = (int)xIntersection % TILE_SIZE;
         }
@@ -408,6 +534,7 @@ void render() {
             // the next function call (drawRayOnMap()) is not a part of raycasting rendering part, 
             // it just draws the ray on the overhead map to illustrate the raycasting process
             dist = distToVerticalGridBeingHit;
+			texture = textureV;
 			wall_side = 1;
 			offset = (int)yIntersection % TILE_SIZE;
         }
@@ -431,12 +558,9 @@ void render() {
 
         columns.column_args[castColumn].top_of_wall = topOfWall;
         columns.column_args[castColumn].wall_side = wall_side;
-        columns.column_args[castColumn].texture_type = 1; //TODO HAVE TO MAKE TEXTURES PART OF MAP
+        columns.column_args[castColumn].texture_type = texture;
         columns.column_args[castColumn].wall_height = (short)projectedWallHeight;
         columns.column_args[castColumn].texture_offset = offset;
-		
-		if(!(short)projectedWallHeight)
-			printf("pwh %d %d", projectedWallHeight, dist);
 
         // TRACE THE NEXT RAY
         castArc += COLUMN_WIDTH;
@@ -519,9 +643,11 @@ void create_tables() {
 	
 	fMap = (uint8_t*)calloc((MAP_HEIGHT * MAP_WIDTH), sizeof(uint8_t));
 	
+	//types: B: bluestone, C: colorstone, E: eagle, G: greystone, M: mossy, P: purplestone, R: redbrick, W: wood
+	
 	uint8_t fMapCopy[] =
 		{
-			W,W,W,W,W,W,W,W,W,W,W,W,
+			W,W,W,W,W,B,W,E,W,P,W,W,
 			W,O,O,O,O,O,O,O,O,O,O,W,
 			W,O,O,O,O,O,O,O,O,O,O,W,
 			W,O,O,O,O,O,O,O,W,O,O,W,

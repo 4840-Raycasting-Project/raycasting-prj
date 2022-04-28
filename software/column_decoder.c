@@ -57,14 +57,11 @@ static void write_columns(columns_t *columns)
 {
 	__u16 bits_to_send;
 	__u16 i;
-	__u16 adjusted_wall_height;
 	column_arg_t column_arg;
 
 	for(i=0; i<640; i++) {
 		
 		column_arg = columns->column_args[i];
-		
-		//adjusted_wall_height = column_arg.wall_height >= 480 ? 480 : column_arg.wall_height;
 		
 		bits_to_send = 0x0000 | (column_arg.wall_side << 9);
 		bits_to_send |= (column_arg.texture_type << 6);
