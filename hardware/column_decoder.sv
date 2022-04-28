@@ -122,16 +122,16 @@ module column_decoder(input logic clk,
         if(hcount == 11'h4fc) //1276 (638)
             freeze_pipeline <= 1'b1;
 
-        else if(hcount == 11'h63d && (vcount < 10'h1e0 || vcount == 10'h20d)) //1597, 480, 525
+        else if(hcount == 11'h63b && (vcount < 10'h1e0 || vcount == 10'h20d)) //1595, 480, 525
             freeze_pipeline <= 1'b0; 
 
     //pipeline stage 1 - retrieve column data
    // always_ff @(posedge clk)
                        
         if(!freeze_pipeline) 
-            colnum[col_module_index_to_read] <= hcount < 11'h4fc //1276
+            colnum[col_module_index_to_read] <= hcount < 11'h4fc //1276 (4fc) and 798(31e)
                 ? hcount[10:1] + 10'h2
-                : hcount[10:1] - 10'h27e;
+                : hcount[10:1] - 10'h31e;
 
     //(pipeline stage 2 is just waiting for column data)
 
