@@ -596,7 +596,7 @@ void create_tables() {
 	
 	fMap = (uint8_t*)calloc((MAP_HEIGHT * MAP_WIDTH), sizeof(uint8_t));
 	
-	//types: 0: bluestone, 1: colorstone, 2: eagle, 3: greystone, 4: mossy, 5: purplestone, 6: redbrick, 7: wood
+	//types: B: bluestone, C: colorstone, E: eagle, G: greystone, M: mossy, P: purplestone, R: redbrick, W: wood
 	
 	uint8_t fMapCopy[] =
 		{
