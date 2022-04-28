@@ -50,7 +50,8 @@ TODO:
 //best to make this some power of 2 (with column decoder MUST be 1)
 #define COLUMN_WIDTH 1
 
-#define CONTROLLER_DEFAULT 0x7F
+#define CONTROLLER_DPAD_DEFAULT 0x7F
+#define CONTROLLER_BTN_DEFAULT 0xF
  
 columns_t columns;
 
@@ -70,8 +71,7 @@ int fPlayerX = 100; int tmpPlayerX;
 int fPlayerY = 160; int tmpPlayerY;
 int fPlayerArc = ANGLE0;
 int fPlayerDistanceToTheProjectionPlane = 677;
-int fPlayerHeight = 32;
-int fPlayerSpeed = 8;
+int fPlayerSpeed = 6;
 int fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
 
 // movement flag
@@ -102,8 +102,8 @@ struct libusb_device_handle *controller;
 uint8_t endpoint_address_kb;
 uint8_t endpoint_address_ctr;
 
-pthread_mutex_t kp_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t kp_cond = PTHREAD_COND_INITIALIZER;
+//pthread_mutex_t kp_mutex = PTHREAD_MUTEX_INITIALIZER;
+//pthread_cond_t kp_cond = PTHREAD_COND_INITIALIZER;
 
 //function signatures
 void render();
@@ -113,6 +113,10 @@ void handle_key_press(struct usb_keyboard_packet *, bool);
 
 bool up_pressed, down_pressed, left_pressed, right_pressed;
 bool up_ctr_pressed, down_ctr_pressed, left_ctr_pressed, right_ctr_pressed;
+
+bool jump_pressed, jump_pressed_ctr, is_jumping;
+bool sched_jump_start;
+int  jump_frame;
 
 pthread_t keyboard_thread;
 void *keyboard_thread_f(void *);
@@ -157,13 +161,39 @@ int main() {
 	int map_size = MAP_HEIGHT * MAP_WIDTH;
 
     while(true) {
-
+		
+		/*
 		pthread_mutex_lock(&kp_mutex);
 		while(!up_pressed && !down_pressed && !left_pressed && !right_pressed 
 			&& !up_ctr_pressed && !down_ctr_pressed && !left_ctr_pressed && !right_ctr_pressed) {		
 			pthread_cond_wait(&kp_cond,&kp_mutex);
 		}
-
+		*/
+		
+		//jump
+		if(sched_jump_start) {
+			
+			is_jumping = true;
+			jump_frame = 0;
+			sched_jump_start = false;
+		}
+		
+		if(is_jumping) {
+			
+			jump_frame++;
+			
+			fProjectionPlaneYCenter = (int) (PROJECTIONPLANEHEIGHT / 2) + (
+			
+				(.1 * (jump_frame - 32) * (jump_frame - 32)) - 100
+			);
+			
+			if(fProjectionPlaneYCenter >= (PROJECTIONPLANEHEIGHT / 2)) {
+				
+				fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
+				is_jumping = false;
+			}
+		}
+		
 		// rotate left
 		if(left_pressed || left_ctr_pressed) {
 			if((fPlayerArc -= ANGLE5) < ANGLE0)
@@ -218,7 +248,7 @@ int main() {
 			}
 		}
 		
-		pthread_mutex_unlock(&kp_mutex);		
+		//pthread_mutex_unlock(&kp_mutex);		
 		
 		render();
 		
@@ -240,6 +270,8 @@ void *keyboard_thread_f(void *ignored) {
 	
 	int transferred;
 	
+	bool prev_jump_state;
+	
 	struct usb_keyboard_packet packet;
 	
 	while(true) {
@@ -250,15 +282,21 @@ void *keyboard_thread_f(void *ignored) {
 
         if (transferred == sizeof(packet)) {
 			
-			pthread_mutex_lock(&kp_mutex);
+			prev_jump_state = jump_pressed;
 			
-			up_pressed = is_key_pressed(0x52, packet.keycode);
-			down_pressed = is_key_pressed(0x51, packet.keycode);
-			left_pressed = is_key_pressed(0x50, packet.keycode);
-			right_pressed = is_key_pressed(0x4F, packet.keycode);
+			//pthread_mutex_lock(&kp_mutex);
 			
-			pthread_cond_signal(&kp_cond);
-			pthread_mutex_unlock(&kp_mutex);
+			up_pressed =    is_key_pressed(0x52, packet.keycode);
+			down_pressed =  is_key_pressed(0x51, packet.keycode);
+			left_pressed =  is_key_pressed(0x50, packet.keycode);
+			right_pressed = is_key_pressed(0x4f, packet.keycode);
+			jump_pressed =  is_key_pressed(0x2c, packet.keycode);
+			
+			if(jump_pressed && !is_jumping && !prev_jump_state)
+				sched_jump_start = true;
+			
+			//pthread_cond_signal(&kp_cond);
+			//pthread_mutex_unlock(&kp_mutex);
 		}
 	}
   
@@ -269,8 +307,10 @@ void *controller_thread_f(void *ignored) {
 	
 	int transferred;
 	
-	struct usb_keyboard_packet packet;
+	bool prev_jump_state_ctr;
 	
+	struct usb_keyboard_packet packet;
+;	
 	while(true) {
 		
 		libusb_interrupt_transfer(controller, endpoint_address_ctr,
@@ -279,24 +319,31 @@ void *controller_thread_f(void *ignored) {
 
         if (transferred == sizeof(packet)) {
 			
-			pthread_mutex_lock(&kp_mutex);
+			prev_jump_state_ctr = jump_pressed_ctr;
+
+			//pthread_mutex_lock(&kp_mutex);
 			
-			if (packet.keycode[1] != CONTROLLER_DEFAULT || packet.keycode[2] != CONTROLLER_DEFAULT) { 
+			if (packet.keycode[1] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_BTN_DEFAULT) { 
 
 				up_ctr_pressed 		= is_controller_key_pressed(2, 0x00, packet.keycode);
 				down_ctr_pressed 	= is_controller_key_pressed(2, 0xff, packet.keycode);
 				left_ctr_pressed 	= is_controller_key_pressed(1, 0x00, packet.keycode);
 				right_ctr_pressed 	= is_controller_key_pressed(1, 0xff, packet.keycode);
+				jump_pressed_ctr	= is_controller_key_pressed(3, 0x2f, packet.keycode);
+				
+				if(jump_pressed_ctr && !is_jumping && !prev_jump_state_ctr)
+					sched_jump_start = true;
 			}
 			else {
-				up_ctr_pressed 	= false;
+				up_ctr_pressed 	    = false;
 				down_ctr_pressed 	= false;
 				left_ctr_pressed 	= false;
 				right_ctr_pressed 	= false;
+				jump_pressed_ctr	= false;
 			}
 			
-			pthread_cond_signal(&kp_cond);
-			pthread_mutex_unlock(&kp_mutex);
+			//pthread_cond_signal(&kp_cond);
+			//pthread_mutex_unlock(&kp_mutex);
 		}
 	}
   
