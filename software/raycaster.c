@@ -3,15 +3,13 @@ Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
 TODO:
 
-1. Texture mapping
+1. Textures for wall - global constants
+2. blackout screen function
+3. fbputchar -> tile buffer hardware char render
+4. port in game logic and menu functionality start and complete a level
+5. jumping demo
 
-3. Bit shift operations for speedup
-4. Other speedup optimizations
-
-6. Thread to update the future hardware
-7. usb controller input?
 8. sprites?
-9. Floor / ceiling color gradients or (texture -> harder)
 
 */
 
@@ -83,7 +81,16 @@ bool fKeyLeft = false;
 bool fKeyRight = false;
 
 // 2 dimensional map
-static const uint8_t W = 1; // wall
+static const uint8_t B = 1; // bluestone
+static const uint8_t C = 2; // colorstone
+static const uint8_t E = 3; // eagle
+static const uint8_t G = 4; // greystone
+static const uint8_t M = 5; // mossy
+static const uint8_t P = 6; // purplestone
+static const uint8_t R = 7; // redbrick
+static const uint8_t W = 8; // wood
+
+
 static const uint8_t O = 0; // opening
 static const uint8_t MAP_WIDTH = 12;
 static const uint8_t MAP_HEIGHT = 12;
@@ -189,7 +196,7 @@ int main() {
 			
 			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
 
-			if(map_index < map_size && fMap[map_index] != W) {
+			if(map_index < map_size && !fMap[map_index]) {
 				
 				fPlayerX = tmpPlayerX;
 				fPlayerY = tmpPlayerY;
@@ -204,7 +211,7 @@ int main() {
 			
 			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
 			
-			if(map_index < map_size && fMap[map_index] != W) {
+			if(map_index < map_size && !fMap[map_index]) {
 				
 				fPlayerX = tmpPlayerX;
 				fPlayerY = tmpPlayerY;
@@ -308,6 +315,8 @@ void render() {
     float yIntersection;
     float distToNextXIntersection;
     float distToNextYIntersection;
+	
+	uint8_t textureH, textureV, texture;
 
     int xGridIndex;        // the current cell that the ray is in
     int yGridIndex;
@@ -385,7 +394,9 @@ void render() {
                     distToHorizontalGridBeingHit = __FLT_MAX__;
                     break;
                 }
-                else if ((fMap[yGridIndex*MAP_WIDTH + xGridIndex]) != O) {
+                else if (fMap[yGridIndex * MAP_WIDTH + xGridIndex]) {
+					
+					textureH = fMap[yGridIndex * MAP_WIDTH + xGridIndex] - 1;
                     distToHorizontalGridBeingHit  = (xIntersection-fPlayerX)*fICosTable[castArc];
                     break;
                 }
@@ -437,7 +448,9 @@ void render() {
                     distToVerticalGridBeingHit = __FLT_MAX__;
                     break;
                 }
-                else if ((fMap[yGridIndex * MAP_WIDTH + xGridIndex]) != O) {
+                else if (fMap[yGridIndex * MAP_WIDTH + xGridIndex]) {
+					
+					textureV = fMap[yGridIndex * MAP_WIDTH + xGridIndex] - 1;
                     distToVerticalGridBeingHit = (yIntersection - fPlayerY) * fISinTable[castArc];
                     break;
                 }
@@ -463,6 +476,7 @@ void render() {
             // the next function call (drawRayOnMap()) is not a part of raycating rendering part, 
             // it just draws the ray on the overhead map to illustrate the raycasting process
             dist = distToHorizontalGridBeingHit;
+			texture = textureH;
 			wall_side = 0;
 			offset = (int)xIntersection % TILE_SIZE;
         }
@@ -473,6 +487,7 @@ void render() {
             // the next function call (drawRayOnMap()) is not a part of raycasting rendering part, 
             // it just draws the ray on the overhead map to illustrate the raycasting process
             dist = distToVerticalGridBeingHit;
+			texture = textureV;
 			wall_side = 1;
 			offset = (int)yIntersection % TILE_SIZE;
         }
@@ -496,7 +511,7 @@ void render() {
 
         columns.column_args[castColumn].top_of_wall = topOfWall;
         columns.column_args[castColumn].wall_side = wall_side;
-        columns.column_args[castColumn].texture_type = 1; //TODO HAVE TO MAKE TEXTURES PART OF MAP
+        columns.column_args[castColumn].texture_type = texture;
         columns.column_args[castColumn].wall_height = (short)projectedWallHeight;
         columns.column_args[castColumn].texture_offset = offset;
 
@@ -581,9 +596,11 @@ void create_tables() {
 	
 	fMap = (uint8_t*)calloc((MAP_HEIGHT * MAP_WIDTH), sizeof(uint8_t));
 	
+	//types: 0: bluestone, 1: colorstone, 2: eagle, 3: greystone, 4: mossy, 5: purplestone, 6: redbrick, 7: wood
+	
 	uint8_t fMapCopy[] =
 		{
-			W,W,W,W,W,W,W,W,W,W,W,W,
+			W,W,W,W,W,B,W,E,W,P,W,W,
 			W,O,O,O,O,O,O,O,O,O,O,W,
 			W,O,O,O,O,O,O,O,O,O,O,W,
 			W,O,O,O,O,O,O,O,W,O,O,W,
