@@ -47,9 +47,12 @@ module column_decoder(input logic clk,
     logic [5:0] texture_col_select = 6'b0;
     logic [23:0] cur_texture_rgb_vals = {8'hff, 8'hff, 8'hff}; //output
 
-
     logic [2:0] pixel_type = 3'b0; //0: ceiling, 1: wall, 2: floor
     logic       pixel_wall_dir = 1'b0;
+
+    logic [2:0]  pixel_type_step_4 = 3'b0; //0: ceiling, 1: wall, 2: floor
+    logic        pixel_wall_dir_step_4 = 1'b0;
+    logic [23:0] next_pixel;
 
     logic freeze_pipeline = 1'b0; //freeze the pixel pipeline (during vga_blank_n generally)
 
@@ -119,17 +122,17 @@ module column_decoder(input logic clk,
     //pixel pipeline
    // always_ff @(posedge clk)
 
-        if(hcount == 11'h4fc) //1276 (638)
+        if(hcount == 11'h4ff) //1279 (639)
             freeze_pipeline <= 1'b1;
 
-        else if(hcount == 11'h63b && (vcount < 10'h1e0 || vcount == 10'h20d)) //1595, 480, 525
+        else if(hcount == 11'h638 && (vcount < 10'h1e0 || vcount == 10'h20c)) //1591, 480, 524
             freeze_pipeline <= 1'b0; 
 
     //pipeline stage 1 - retrieve column data
    // always_ff @(posedge clk)
                        
         if(!freeze_pipeline) 
-            colnum[col_module_index_to_read] <= hcount < 11'h4fc //1276 (4fc) and 798(31e)
+            colnum[col_module_index_to_read] <= hcount < 11'h500 //1280 (4f8) and 798(31e)
                 ? hcount[10:1] + 10'h2
                 : hcount[10:1] - 10'h31e;
 
@@ -156,6 +159,14 @@ module column_decoder(input logic clk,
             texture_row_select <= ((vcount_1_ahead - $signed(col_data[col_module_index_to_read][41:26])) * sf_data[col_module_index_to_read]) >> 4'h9;
         end
 
+    //pipeline stage 4 - pass the baton (introduce artificial delay for timing)
+        pixel_type_step_4 = pixel_type;
+        
+        if(pixel_type == 2'h1) begin
+
+            next_pixel = cur_texture_rgb_vals;
+            pixel_wall_dir_step_4 = pixel_wall_dir;
+        end
 
     //swap out column module to read from if new avail and in between frames
     //always_ff @(posedge clk)
@@ -169,29 +180,27 @@ module column_decoder(input logic clk,
     end
     always_comb begin
 
-        //"pipeline" stage 4 (current clock)
+        //"pipeline" stage 5 (current clock)
 
-        vcount_1_ahead = hcount > 11'h63f //1599
-            ? vcount > 10'h1df
-                ? 10'h0
-                : vcount + 10'h1
-            : vcount; 
+        vcount_1_ahead = hcount >= 11'h63e //1598
+            ? ( vcount > 10'h1df ? 10'h0 : vcount + 10'h1 )
+            : vcount;
 
         {VGA_R, VGA_G, VGA_B} = {8'h0, 8'h0, 8'h0};
 
         if (VGA_BLANK_n) begin 
 
-            if(pixel_type == 2'h0) //ceil
+            if(pixel_type_step_4 == 2'h0) //ceil
                 {VGA_R, VGA_G, VGA_B} = {(vcount[8:1] + 8'h00), (vcount[8:1] + 8'h00), 8'hff};
 
-            else if(pixel_type == 2'h2) //floor TODO gradient
+            else if(pixel_type_step_4 == 2'h2) //floor TODO gradient
                 {VGA_R, VGA_G, VGA_B} = {8'h40, 8'h40, 8'h40};
 
-            else if(!pixel_wall_dir) //wall faded
-                {VGA_R, VGA_G, VGA_B} = {(cur_texture_rgb_vals[23:16]>>1), (cur_texture_rgb_vals[15:8]>>1), (cur_texture_rgb_vals[7:0]>>1)};
+            else if(!pixel_wall_dir_step_4) //wall faded
+                {VGA_R, VGA_G, VGA_B} = {(next_pixel[23:16]>>1), (next_pixel[15:8]>>1), (next_pixel[7:0]>>1)};
 
             else //wall full brightness
-                {VGA_R, VGA_G, VGA_B} = cur_texture_rgb_vals;
+                {VGA_R, VGA_G, VGA_B} = next_pixel;
         end 
     end
 
