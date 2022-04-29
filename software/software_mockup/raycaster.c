@@ -27,6 +27,7 @@ TODO:
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <stdint.h>
 
 
 // size of tile (wall height) - best to make some power of 2
@@ -499,8 +500,8 @@ void level_select() {
 	 //packet.keycode[1],packet.keycode[2],packet.keycode[3],packet.keycode[4],packet.keycode[5]);
 	 //fbputs(keystate, 6, 0);			//for debug
 
+	char *temp_levels[5];
 	
-
 	
 	 while (1) {
 
@@ -510,21 +511,48 @@ void level_select() {
 				continue;
 			levels--;
 			printf("levels: %d\n",levels);
+			for(int i=0;i<NUMLEVELS;i++){
+				temp_levels[i] = level[i];
+			}
 		}
 		else if(down_pressed) {
 			if (levels + 1 == NUMLEVELS)
 				continue;
 			levels++;
 			printf("levels: %d\n",levels);
+			for(int i=0;i<NUMLEVELS;i++){
+				temp_levels[i] = level[i];
+			}
 		}
 		else if (enter_pressed)
 			break;
 
-		 fbputs(level[0],10,25,levels == 0 ? 1 : 0);
-		 fbputs(level[1],11,25,levels == 1 ? 1 : 0);
-		 fbputs(level[2],12,25,levels == 2 ? 1 : 0);
-		 fbputs(level[3],13,25,levels == 3 ? 1 : 0);
-		 fbputs(level[4],14,25,levels == 4 ? 1 : 0);
+		switch(levels){
+			
+			case 0:
+				sprintf(temp_levels[0],"%s %s",">",level[0]);
+				break;	
+			case 1:
+				sprintf(temp_levels[1],"%s %s",">",level[1]);
+				break;	
+			case 2:
+				sprintf(temp_levels[2],"%s %s",">",level[2]);
+				break;	
+			case 3:
+				sprintf(temp_levels[3],"%s %s",">",level[3]);
+				break;	
+			case 4:
+				sprintf(temp_levels[4],"%s %s",">",level[4]);
+				break;	
+			default:
+				break;
+		}
+
+		 fbputs(temp_level[0],10,25,levels == 0 ? 1 : 0);
+		 fbputs(temp_level[1],11,25,levels == 1 ? 1 : 0);
+		 fbputs(temp_level[2],12,25,levels == 2 ? 1 : 0);
+		 fbputs(temp_level[3],13,25,levels == 3 ? 1 : 0);
+		 fbputs(temp_level[4],14,25,levels == 4 ? 1 : 0);
 
 		 usleep(100000);
  	 }
