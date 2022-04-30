@@ -132,9 +132,9 @@ module column_decoder(input logic clk,
    // always_ff @(posedge clk)
                        
         if(!freeze_pipeline) 
-            colnum[col_module_index_to_read] <= hcount < 11'h500 //1280 (4f8) and 798(31e)
+            colnum[col_module_index_to_read] <= hcount < 11'h500 //1280 (4f8) and 797(31d)
                 ? hcount[10:1] + 10'h2
-                : hcount[10:1] - 10'h31e;
+                : hcount[10:1] - 10'h31d;
 
     //(pipeline stage 2 is just waiting for column data)
 
