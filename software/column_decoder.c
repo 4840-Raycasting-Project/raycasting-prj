@@ -34,11 +34,18 @@
 #include <linux/of_address.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
+#include <linux/delay.h>
 #include <asm/types.h>
 #include "column_decoder.h"
 
-
 #define DRIVER_NAME "column_decoder"
+
+/* Device registers */
+#define WRITE_COLNUM_RESET(x) (x)
+#define WRITE_COLS(x) ((x)+2)
+#define WRITE_CHAR(x) ((x)+4)
+#define WRITE_BLACKOUT(x) ((x)+6)
+#define READ_VBLANK(x) (x)
 
 /*
  * Information about our device
@@ -49,6 +56,13 @@ struct column_decoder_dev {
 	columns_t *columns;
 } dev;
 
+
+//ensure the next write will be for the first column
+static void reset_col_num(void) {
+	
+	iowrite8(0x00, WRITE_COLNUM_RESET(dev.virtbase)); //value does not matter
+}
+
 /*
  * Write segments of a single digit
  * Assumes digit is in range and the device information has been set up
@@ -57,7 +71,8 @@ static void write_columns(columns_t *columns)
 {
 	__u16 bits_to_send;
 	__u16 i;
-	column_arg_t column_arg;
+	__u32 scaling_factor; //TODO
+	column_arg_t column_arg;	
 
 	for(i=0; i<640; i++) {
 		
@@ -66,19 +81,38 @@ static void write_columns(columns_t *columns)
 		bits_to_send = 0x0000 | (column_arg.wall_side << 9);
 		bits_to_send |= (column_arg.texture_type << 6);
 		bits_to_send |= column_arg.texture_offset;
-		iowrite16(bits_to_send, dev.virtbase);
+		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));
 		
-		iowrite16(column_arg.wall_height, dev.virtbase);
+		iowrite16(column_arg.wall_height, WRITE_COLS(dev.virtbase));
 		
-		iowrite16(column_arg.top_of_wall, dev.virtbase);
+		iowrite16(column_arg.top_of_wall, WRITE_COLS(dev.virtbase));
 		
 		//scaling factor
 		bits_to_send = column_arg.wall_height ? 0x0000 | ((64 << 9) / column_arg.wall_height) : 0x0000;
-		iowrite16(bits_to_send, dev.virtbase);		
+		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));		
 	}
 	
 	//TODO copy column data manually
 	//dev.columns = columns;
+}
+
+
+static void write_char(char_tile_t *char_tile) {
+	
+	//TODO
+}
+
+static void blackout_screen(void) {	
+	iowrite16(0x0001, WRITE_BLACKOUT(dev.virtbase));
+}
+
+static void remove_blackout_screen(void) {	
+	iowrite16(0x0000, WRITE_BLACKOUT(dev.virtbase));
+}
+
+static __u8 read_vblank(void) {
+	
+	return (__u8) ioread16(READ_VBLANK(dev.virtbase));
 }
 
 
@@ -89,23 +123,54 @@ static void write_columns(columns_t *columns)
  */
 static long column_decoder_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
-	columns_t columns;
+	columns_t   columns;
+	char_tile_t char_tile;
+	__u8		vblank_val;
 
 	switch (cmd) {
-	case COLUMN_DECODER_WRITE_COLUMNS:
-		if (copy_from_user(&columns, (columns_t *) arg,
-				   sizeof(columns_t)))
-			return -EACCES;
-		write_columns(&columns);
-		break;
-/*
-	case COLUMN_DECODER_READ_ATTR:
-	  	columns.radius = dev.radius;
-		if (copy_to_user((column_decoder_arg_t *) arg, &columns,
-				 sizeof(column_decoder_arg_t)))
-			return -EACCES;
+		
+	case COLUMN_DECODER_RESET_COL_NUM:
+		reset_col_num();
 		break;		
-*/
+		
+	case COLUMN_DECODER_WRITE_COLUMNS:
+	
+		if (copy_from_user(&columns, (columns_t *) arg, sizeof(columns_t)))
+			return -EACCES;
+		
+		write_columns(&columns);
+		
+		break;
+
+	case COLUMN_DECODER_WRITE_CHAR:
+	
+		if (copy_from_user(&char_tile, (char_tile_t *) arg, sizeof(char_tile_t)))
+			return -EACCES;
+		
+		write_char(&char_tile);
+		
+		break;			
+		
+	case COLUMN_DECODER_BLACKOUT_SCREEN:
+		
+		blackout_screen();
+		
+		break;
+		
+	case COLUMN_DECODER_REMOVE_BLACKOUT_SCREEN:
+		remove_blackout_screen();
+		
+		break;
+		
+	case COLUMN_DECODER_READ_VBLANK:
+	
+		vblank_val = read_vblank();
+		
+		if (copy_to_user((__u8 *) arg, &vblank_val, sizeof(__u8)))
+			return -EACCES;
+		
+		break;		
+
 	default:
 		return -EINVAL;
 	}
@@ -158,10 +223,6 @@ static int __init column_decoder_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto out_release_mem_region;
 	}
-        
-	/* TODO Provide a bunch of blank columns */
-	
-	//write_columns(columns_t *columns);
 
 	return 0;
 
