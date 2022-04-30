@@ -19,11 +19,25 @@ typedef struct {
 	column_arg_t column_args[640];
 } columns_t;
 
+typedef struct {
+	
+  __u8 row;
+  __u8 col;
+  __u8 char_val;
+  
+} char_tile_t;
+
+
 #define COLUMN_DECODER_MAGIC 'q'
 
 /* ioctls and their arguments */
-#define COLUMN_DECODER_WRITE_COLUMNS _IOW(COLUMN_DECODER_MAGIC, 1, columns_t *)
+#define COLUMN_DECODER_RESET_COL_NUM _IOW(COLUMN_DECODER_MAGIC, 1, __u8)
+#define COLUMN_DECODER_WRITE_COLUMNS _IOW(COLUMN_DECODER_MAGIC, 2, columns_t *)
+#define COLUMN_DECODER_WRITE_CHAR _IOW(COLUMN_DECODER_MAGIC, 3, char_tile_t *)
+#define COLUMN_DECODER_BLACKOUT_SCREEN _IOW(COLUMN_DECODER_MAGIC, 4, __u8)
+#define COLUMN_DECODER_REMOVE_BLACKOUT_SCREEN _IOW(COLUMN_DECODER_MAGIC, 5, __u8)
 
-/* #define VGA_BALL_READ_ATTR  _IOR(VGA_BALL_MAGIC, 5, vga_ball_arg_t *) */
+#define COLUMN_DECODER_READ_VBLANK _IOR(COLUMN_DECODER_MAGIC, 6, __u8)
+
 
 #endif

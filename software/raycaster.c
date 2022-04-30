@@ -143,14 +143,15 @@ int main() {
     create_tables();
 
     /* Open the keyboard */
-    if ((keyboard = openkeyboard(&endpoint_address_kb)) == NULL) {
+    if ((keyboard = openkeyboard(&endpoint_address_kb)) == NULL) 
         fprintf(stderr, "Did not find a keyboard\n");
-        exit(1);
-    }
-	
-    if ((controller = opencontroller(&endpoint_address_ctr)) == NULL) {
+    
+	/* Open the controller */
+    if ((controller = opencontroller(&endpoint_address_ctr)) == NULL)
         fprintf(stderr, "Did not find a controller\n");
-    }	
+    
+	if(controller == NULL && keyboard == NULL) 
+		exit(1);
 	
 	//start keyboard and controller threads
 	pthread_create(&keyboard_thread, NULL, keyboard_thread_f, NULL);
@@ -159,6 +160,14 @@ int main() {
 	render();
 	
 	int map_size = MAP_HEIGHT * MAP_WIDTH;
+	
+	//reset column number in hardware for good measure
+	if (ioctl(column_decoder_fd, COLUMN_DECODER_RESET_COL_NUM, 0x00)) {
+		perror("ioctl(COLUMN_DECODER_RESET_COL_NUM) failed");
+		exit(1);
+	}
+	
+	int i = 0;
 
     while(true) {
 		
@@ -250,9 +259,16 @@ int main() {
 		
 		//pthread_mutex_unlock(&kp_mutex);		
 		
+		//test black out every half second
+		/*
+		if((i % 60) > 30)
+			ioctl(column_decoder_fd, COLUMN_DECODER_BLACKOUT_SCREEN, 0x00);
+		else
+			ioctl(column_decoder_fd, COLUMN_DECODER_REMOVE_BLACKOUT_SCREEN, 0x00);
+		*/
 		render();
 		
-		usleep(16667); //60fps
+		i++;
     }
 	
 	free(fMap);
@@ -364,6 +380,7 @@ void render() {
     float distToNextYIntersection;
 	
 	uint8_t textureH, textureV, texture;
+	uint8_t vblank = 0;
 
     int xGridIndex;        // the current cell that the ray is in
     int yGridIndex;
@@ -567,7 +584,18 @@ void render() {
         if (castArc >= ANGLE360)
             castArc -= ANGLE360;
     }
-
+	//usleep(16667);
+	//wait for vblank to send columns
+	while(true) {
+		
+		ioctl(column_decoder_fd, COLUMN_DECODER_READ_VBLANK, &vblank);
+		
+		if(vblank)
+			break;
+		
+		usleep(100);
+	}
+	
     //send the columns to the driver
     if (ioctl(column_decoder_fd, COLUMN_DECODER_WRITE_COLUMNS, &columns)) {
 		perror("ioctl(COLUMN_DECODER_WRITE_COLUMNS) failed");
