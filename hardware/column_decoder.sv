@@ -13,11 +13,14 @@
  */
 
 module column_decoder(input logic clk,
-	    input logic 	   reset,
-		input logic 	   write,
-		input 		   chipselect,
+	    input logic 	    reset,
+		input logic 	    write,
+		input 		        chipselect,
+        input logic [3:0]   address,
         input logic [15:0]  writedata,
 
+        output logic [15:0] readdata,
+        
 		output logic [7:0] VGA_R, VGA_G, VGA_B,
 		output logic 	   VGA_CLK, VGA_HS, VGA_VS,
 		                   VGA_BLANK_n,
@@ -54,6 +57,8 @@ module column_decoder(input logic clk,
     logic        pixel_wall_dir_step_4 = 1'b0;
     logic [23:0] next_pixel;
 
+    logic blackout_screen = 1'b0;
+
     logic freeze_pipeline = 1'b0; //freeze the pixel pipeline (during vga_blank_n generally)
 
     columns columns0(clk, reset, col_write[0], colnum[0], new_sfdata[0], new_coldata[0], sf_data[0], col_data[0]),
@@ -79,41 +84,59 @@ module column_decoder(input logic clk,
             col_write <= 3'b0;
 
         end else if (chipselect && write) begin
-            
-            //1st write stage
-            if(!cur_col_write_stage) begin
-            
-                cur_col_first_write_stage_data <= writedata[9:0];
-                col_write <= 3'b0;
-                cur_col_write_stage <= cur_col_write_stage + 2'h1;
 
-            //second write stage
-            end else if(cur_col_write_stage == 2'h1) begin
-                cur_col_second_write_stage_data <= writedata;
-                cur_col_write_stage <= cur_col_write_stage + 2'h1;
-
-            //third write stage
-            end else if(cur_col_write_stage == 2'h2) begin
-                cur_col_third_write_stage_data <= writedata;
-                cur_col_write_stage <= cur_col_write_stage + 2'h1;    
-
-            //fourth write stage
-            end else begin
-
-                if(colnum[col_module_index_to_write] == 10'h27F) begin //639
-                    
-                    col_module_index_to_write <= 2'b11 ^ col_module_index_to_write ^ col_module_index_to_read;
-                    colnum[2'b11 ^ col_module_index_to_write ^ col_module_index_to_read] <= 10'b0;
-                    new_columns_ready <= 1'b1;
-                end
-                else
-                    colnum[col_module_index_to_write] <= colnum[col_module_index_to_write] + 10'b1; //increment col num
-                
-                new_coldata[col_module_index_to_write] <= {cur_col_third_write_stage_data, cur_col_second_write_stage_data, cur_col_first_write_stage_data};
-                new_sfdata[col_module_index_to_write] <= writedata;
-                col_write[col_module_index_to_write] <= 1'h1;
+            if(address == 4'h0) begin
                 cur_col_write_stage <= 2'h0;
+                col_write[col_module_index_to_write] <= 1'h0;
+                colnum[col_module_index_to_write] <= 10'b0;
+            end
+
+            else if(address == 4'h1) begin 
+
+                //1st write stage
+                if(!cur_col_write_stage) begin
                 
+                    cur_col_first_write_stage_data <= writedata[9:0];
+                    col_write <= 3'b0;
+                    cur_col_write_stage <= cur_col_write_stage + 2'h1;
+
+                //second write stage
+                end else if(cur_col_write_stage == 2'h1) begin
+                    cur_col_second_write_stage_data <= writedata;
+                    cur_col_write_stage <= cur_col_write_stage + 2'h1;
+
+                //third write stage
+                end else if(cur_col_write_stage == 2'h2) begin
+                    cur_col_third_write_stage_data <= writedata;
+                    cur_col_write_stage <= cur_col_write_stage + 2'h1;    
+
+                //fourth write stage
+                end else begin
+
+                    if(colnum[col_module_index_to_write] == 10'h27F) begin //639
+                        
+                        col_module_index_to_write <= 2'b11 ^ col_module_index_to_write ^ col_module_index_to_read;
+                        colnum[2'b11 ^ col_module_index_to_write ^ col_module_index_to_read] <= 10'b0;
+                        new_columns_ready <= 1'b1;
+                    end
+                    else
+                        colnum[col_module_index_to_write] <= colnum[col_module_index_to_write] + 10'b1; //increment col num
+                    
+                    new_coldata[col_module_index_to_write] <= {cur_col_third_write_stage_data, cur_col_second_write_stage_data, cur_col_first_write_stage_data};
+                    new_sfdata[col_module_index_to_write] <= writedata;
+                    col_write[col_module_index_to_write] <= 1'h1;
+                    cur_col_write_stage <= 2'h0;
+                    
+                end
+            end
+            
+            else if(address == 4'h2) begin
+
+                //set text stuff
+            end
+
+            else if(address == 4'h3) begin
+                blackout_screen <= writedata[0];
             end
         end
         else
@@ -190,18 +213,28 @@ module column_decoder(input logic clk,
 
         if (VGA_BLANK_n) begin 
 
-            if(pixel_type_step_4 == 2'h0) //ceil
-                {VGA_R, VGA_G, VGA_B} = {(vcount[8:1] + 8'h00), (vcount[8:1] + 8'h00), 8'hff};
+            if(!blackout_screen) begin
 
-            else if(pixel_type_step_4 == 2'h2) //floor TODO gradient
-                {VGA_R, VGA_G, VGA_B} = {8'h40, 8'h40, 8'h40};
+                if(pixel_type_step_4 == 2'h0) //ceil
+                    {VGA_R, VGA_G, VGA_B} = {(vcount[8:1] + 8'h00), (vcount[8:1] + 8'h00), 8'hff};
 
-            else if(!pixel_wall_dir_step_4) //wall faded
-                {VGA_R, VGA_G, VGA_B} = {(next_pixel[23:16]>>1), (next_pixel[15:8]>>1), (next_pixel[7:0]>>1)};
+                else if(pixel_type_step_4 == 2'h2) //floor TODO gradient
+                    {VGA_R, VGA_G, VGA_B} = {8'h40, 8'h40, 8'h40};
 
-            else //wall full brightness
-                {VGA_R, VGA_G, VGA_B} = next_pixel;
+                else if(!pixel_wall_dir_step_4) //wall faded
+                    {VGA_R, VGA_G, VGA_B} = {(next_pixel[23:16]>>1), (next_pixel[15:8]>>1), (next_pixel[7:0]>>1)};
+
+                else //wall full brightness
+                    {VGA_R, VGA_G, VGA_B} = next_pixel;
+            end
+
+            //text stuff
         end 
+
+        if(vcount > 10'h1df)
+            readdata = 10'h1;
+        else
+            readdata = 10'h0;
     end
 
 endmodule
@@ -256,7 +289,7 @@ module textures(
     output logic [23:0] texture_data
 );
 
-    logic [27:0] textures [32767:0]; //texture type, row num, col num
+    logic [23:0] textures [32767:0]; //texture type, row num, col num
 
     //https://projectf.io/posts/initialize-memory-in-verilog/
     initial begin
