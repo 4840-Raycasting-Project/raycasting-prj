@@ -84,7 +84,8 @@ module column_decoder(input logic clk,
             col_write <= 3'b0;
 
         end else if (chipselect && write) begin
-
+            
+            //reset col num
             if(address == 4'h0) begin
                 cur_col_write_stage <= 2'h0;
                 col_write[col_module_index_to_write] <= 1'h0;
@@ -232,9 +233,9 @@ module column_decoder(input logic clk,
         end 
 
         if(vcount > 10'h1df)
-            readdata = 10'h1;
+            readdata = 16'h1;
         else
-            readdata = 10'h0;
+            readdata = 16'h0;
     end
 
 endmodule
