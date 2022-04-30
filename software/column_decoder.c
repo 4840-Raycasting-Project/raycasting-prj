@@ -71,7 +71,7 @@ static void write_columns(columns_t *columns)
 {
 	__u16 bits_to_send;
 	__u16 i;
-	__u32 scaling_factor; //TODO
+	__u32 scaling_factor;
 	column_arg_t column_arg;	
 
 	for(i=0; i<640; i++) {
@@ -87,9 +87,27 @@ static void write_columns(columns_t *columns)
 		
 		iowrite16(column_arg.top_of_wall, WRITE_COLS(dev.virtbase));
 		
-		//scaling factor
-		bits_to_send = column_arg.wall_height ? 0x0000 | ((64 << 9) / column_arg.wall_height) : 0x0000;
-		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));		
+		scaling_factor = column_arg.wall_height ? (0x00000000 | ((64 << 25) / column_arg.wall_height)) * -1 : 0x00000000;
+		
+		/*
+		bits_to_send = *( (__u16*) ((&scaling_factor)+2) );
+		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));
+
+		//bits_to_send = *( (__u16*) ((&scaling_factor)+2) );
+		//iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));		
+				
+		bits_to_send = *( (__u16*) (&scaling_factor) );
+		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));
+		*/
+		
+
+		bits_to_send = (__u16) ((scaling_factor & 0xFFFF0000) >> 16);
+		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));
+		
+		bits_to_send = (__u16) (scaling_factor & 0x0000FFFF);
+		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));
+		
+		
 	}
 	
 	//TODO copy column data manually

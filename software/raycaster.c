@@ -561,7 +561,7 @@ void render() {
 		
 		//0 distance makes no sense for below calcs
 		if(dist == 0.0)
-			dist = .001;
+			dist = .00001;
 				
         // projected_wall_height/wall_height = fPlayerDistToProjectionPlane/dist;
         int projectedWallHeight = (int)(WALL_HEIGHT * (float)fPlayerDistanceToTheProjectionPlane / dist);
