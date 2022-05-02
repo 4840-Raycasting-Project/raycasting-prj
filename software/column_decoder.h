@@ -21,9 +21,10 @@ typedef struct {
 
 typedef struct {
 	
+  char char_val;	
+	
   __u8 row;
   __u8 col;
-  __u8 char_val;
   
 } char_tile_t;
 

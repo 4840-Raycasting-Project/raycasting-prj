@@ -52,6 +52,9 @@ TODO:
 
 #define CONTROLLER_DPAD_DEFAULT 0x7F
 #define CONTROLLER_BTN_DEFAULT 0xF
+
+#define CHAR_NUM_ROWS 30
+#define CHAR_NUM_COLS 80
  
 columns_t columns;
 
@@ -110,6 +113,9 @@ void render();
 void create_tables();
 float arc_to_rad(float);
 void handle_key_press(struct usb_keyboard_packet *, bool);
+void put_char(char, uint8_t, uint8_t);
+void clear_chars();
+void set_blackout(bool);
 
 bool up_pressed, down_pressed, left_pressed, right_pressed;
 bool up_ctr_pressed, down_ctr_pressed, left_ctr_pressed, right_ctr_pressed;
@@ -167,7 +173,12 @@ int main() {
 		exit(1);
 	}
 	
+	set_blackout(false);
+	clear_chars();
+	
 	int i = 0;
+	
+	put_char('a', 0, 0);
 
     while(true) {
 		
@@ -262,10 +273,11 @@ int main() {
 		//test black out every half second
 		/*
 		if((i % 60) > 30)
-			ioctl(column_decoder_fd, COLUMN_DECODER_BLACKOUT_SCREEN, 0x00);
+			set_blackout(true);
 		else
-			ioctl(column_decoder_fd, COLUMN_DECODER_REMOVE_BLACKOUT_SCREEN, 0x00);
+			set_blackout(false);
 		*/
+		
 		render();
 		
 		i++;
@@ -593,7 +605,7 @@ void render() {
 		if(vblank)
 			break;
 		
-		usleep(100);
+		usleep(50);
 	}
 	
     //send the columns to the driver
@@ -698,5 +710,44 @@ void create_tables() {
 //*******************************************************************//
 float arc_to_rad(float arc_angle) {
     return ((float)(arc_angle*M_PI)/(float)ANGLE180);    
+}
+
+/*supplemental functions dealing with screen color override and text*/
+
+void put_char(char character, uint8_t row, uint8_t col) {
+	
+	char_tile_t char_tile = { character, row, col };
+	
+	if (ioctl(column_decoder_fd, COLUMN_DECODER_WRITE_CHAR, &char_tile)) {
+		perror("ioctl(COLUMN_DECODER_WRITE_CHAR) failed");
+		exit(1);
+	}
+}
+	
+
+void clear_chars() {
+	
+	for(int row=0; row<CHAR_NUM_ROWS; row++) {
+		for(int col=0; row<CHAR_NUM_COLS; col++)
+			put_char(' ', row, col);
+	}
+}
+
+
+void set_blackout(bool blackout) {
+	
+	if(blackout) {
+		if (ioctl(column_decoder_fd, COLUMN_DECODER_BLACKOUT_SCREEN, 0x00)) {
+			perror("ioctl(COLUMN_DECODER_BLACKOUT_SCREEN) failed");
+			exit(1);
+		}			
+	}
+	else {
+		if (ioctl(column_decoder_fd, COLUMN_DECODER_REMOVE_BLACKOUT_SCREEN, 0x00)) {
+			perror("ioctl(COLUMN_DECODER_REMOVE_BLACKOUT_SCREEN) failed");
+			exit(1);
+		}	
+	}
+	
 }
 
