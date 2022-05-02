@@ -29,7 +29,7 @@ module column_decoder(input logic clk,
     logic [10:0]	hcount;
     logic [9:0]     vcount, vcount_1_ahead;
 
-    logic [1:0]      cur_col_write_stage = 2'h0; //which of 3 write stages per column
+    logic [2:0]      cur_col_write_stage = 3'h0; //which of 3 write stages per column
     logic [1:0]      col_module_index_to_read = 2'b00; //which columns module to read
     logic [1:0]      col_module_index_to_write = 2'b01;  //which columns module to write to
     logic [2:0]      col_write = 3'b0;
@@ -38,12 +38,13 @@ module column_decoder(input logic clk,
     logic [9:0]      cur_col_first_write_stage_data;
     logic [15:0]     cur_col_second_write_stage_data;
     logic [15:0]     cur_col_third_write_stage_data;
+    logic [15:0]     cur_col_fourth_write_stage_data;
 
     logic [9:0]  colnum [2:0];
     logic [41:0] new_coldata [2:0];
     logic [41:0] col_data [2:0];
-    logic [15:0] new_sfdata[2:0];
-    logic [15:0] sf_data [2:0];
+    logic [31:0] new_sfdata[2:0];
+    logic [31:0] sf_data [2:0];
 
     logic [2:0] texture_type_select = 1'b0;
     logic [5:0] texture_row_select = 6'b0;
@@ -53,13 +54,13 @@ module column_decoder(input logic clk,
     logic [2:0] pixel_type = 3'b0; //0: ceiling, 1: wall, 2: floor
     logic       pixel_wall_dir = 1'b0;
 
-    logic [2:0]  pixel_type_step_4 = 3'b0; //0: ceiling, 1: wall, 2: floor
-    logic        pixel_wall_dir_step_4 = 1'b0;
+    logic [2:0]  next_pixel_type = 3'b0; //0: ceiling, 1: wall, 2: floor
+    logic        next_pixel_wall_dir = 1'b0;
     logic [23:0] next_pixel;
 
     logic blackout_screen = 1'b0;
 
-    logic freeze_pipeline = 1'b0; //freeze the pixel pipeline (during vga_blank_n generally)
+    logic freeze_pipeline = 1'b0; //freeze the pixel pipeline (during vga_blank_n)
 
     columns columns0(clk, reset, col_write[0], colnum[0], new_sfdata[0], new_coldata[0], sf_data[0], col_data[0]),
             columns1(clk, reset, col_write[1], colnum[1], new_sfdata[1], new_coldata[1], sf_data[1], col_data[1]),
@@ -78,7 +79,7 @@ module column_decoder(input logic clk,
         if (reset) begin
 
             {colnum[0], colnum[1], colnum[2]} <= 30'h0;
-            cur_col_write_stage <= 1'h0;
+            cur_col_write_stage <= 3'h0;
             col_module_index_to_read <= 2'b00; 
             col_module_index_to_write <= 2'b01;
             col_write <= 3'b0;
@@ -87,7 +88,7 @@ module column_decoder(input logic clk,
             
             //reset col num
             if(address == 4'h0) begin
-                cur_col_write_stage <= 2'h0;
+                cur_col_write_stage <= 3'h0;
                 col_write[col_module_index_to_write] <= 1'h0;
                 colnum[col_module_index_to_write] <= 10'b0;
             end
@@ -99,17 +100,22 @@ module column_decoder(input logic clk,
                 
                     cur_col_first_write_stage_data <= writedata[9:0];
                     col_write <= 3'b0;
-                    cur_col_write_stage <= cur_col_write_stage + 2'h1;
+                    cur_col_write_stage <= cur_col_write_stage + 3'h1;
 
                 //second write stage
-                end else if(cur_col_write_stage == 2'h1) begin
+                end else if(cur_col_write_stage == 3'h1) begin
                     cur_col_second_write_stage_data <= writedata;
-                    cur_col_write_stage <= cur_col_write_stage + 2'h1;
+                    cur_col_write_stage <= cur_col_write_stage + 3'h1;
 
                 //third write stage
-                end else if(cur_col_write_stage == 2'h2) begin
+                end else if(cur_col_write_stage == 3'h2) begin
                     cur_col_third_write_stage_data <= writedata;
-                    cur_col_write_stage <= cur_col_write_stage + 2'h1;    
+                    cur_col_write_stage <= cur_col_write_stage + 3'h1; 
+
+                //fourth write stage
+                end else if(cur_col_write_stage == 3'h3) begin
+                    cur_col_fourth_write_stage_data <= writedata;
+                    cur_col_write_stage <= cur_col_write_stage + 3'h1;    
 
                 //fourth write stage
                 end else begin
@@ -124,9 +130,9 @@ module column_decoder(input logic clk,
                         colnum[col_module_index_to_write] <= colnum[col_module_index_to_write] + 10'b1; //increment col num
                     
                     new_coldata[col_module_index_to_write] <= {cur_col_third_write_stage_data, cur_col_second_write_stage_data, cur_col_first_write_stage_data};
-                    new_sfdata[col_module_index_to_write] <= writedata;
+                    new_sfdata[col_module_index_to_write] <= {cur_col_fourth_write_stage_data, writedata};
                     col_write[col_module_index_to_write] <= 1'h1;
-                    cur_col_write_stage <= 2'h0;
+                    cur_col_write_stage <= 3'h0;
                     
                 end
             end
@@ -160,9 +166,9 @@ module column_decoder(input logic clk,
                 ? hcount[10:1] + 10'h2
                 : hcount[10:1] - 10'h31d;
 
-    //(pipeline stage 2 is just waiting for column data)
+    //(pipeline stage 2 and 3 is just waiting for column data)
 
-    //pipeline stage 3 - use column data to set texture registers
+    //pipeline stage 4 - use column data to set texture registers
     //always_ff @(posedge clk) 
         
         //ceil
@@ -180,22 +186,22 @@ module column_decoder(input logic clk,
 
             texture_type_select <= col_data[col_module_index_to_read][8:6];
             texture_col_select <= col_data[col_module_index_to_read][5:0];
-            texture_row_select <= ((vcount_1_ahead - $signed(col_data[col_module_index_to_read][41:26])) * sf_data[col_module_index_to_read]) >> 4'h9;
+            texture_row_select <= ((vcount_1_ahead - $signed(col_data[col_module_index_to_read][41:26])) * sf_data[col_module_index_to_read]) >> 5'h19;
         end
 
-    //pipeline stage 4 - pass the baton (introduce artificial delay for timing)
-        pixel_type_step_4 = pixel_type;
+    //pipeline stage 5 - pass the baton (introduce artificial delay for timing - want on even cycles)
+        next_pixel_type = pixel_type;
         
         if(pixel_type == 2'h1) begin
 
             next_pixel = cur_texture_rgb_vals;
-            pixel_wall_dir_step_4 = pixel_wall_dir;
+            next_pixel_wall_dir = pixel_wall_dir;
         end
 
     //swap out column module to read from if new avail and in between frames
     //always_ff @(posedge clk)
 
-        if(vcount == 10'h1e0 && new_columns_ready) begin //480
+        if(vcount == 10'h20b && new_columns_ready) begin // 523
 
             new_columns_ready <= 1'b0;
             col_module_index_to_read <= 2'b11 ^ col_module_index_to_read ^ col_module_index_to_write;
@@ -204,7 +210,7 @@ module column_decoder(input logic clk,
     end
     always_comb begin
 
-        //"pipeline" stage 5 (current clock)
+        //"pipeline" stage 6 (current clock)
 
         vcount_1_ahead = hcount >= 11'h63e //1598
             ? ( vcount > 10'h1df ? 10'h0 : vcount + 10'h1 )
@@ -216,13 +222,13 @@ module column_decoder(input logic clk,
 
             if(!blackout_screen) begin
 
-                if(pixel_type_step_4 == 2'h0) //ceil
+                if(next_pixel_type == 2'h0) //ceil
                     {VGA_R, VGA_G, VGA_B} = {(vcount[8:1] + 8'h00), (vcount[8:1] + 8'h00), 8'hff};
 
-                else if(pixel_type_step_4 == 2'h2) //floor TODO gradient
+                else if(next_pixel_type == 2'h2) //floor 
                     {VGA_R, VGA_G, VGA_B} = {8'h40, 8'h40, 8'h40};
 
-                else if(!pixel_wall_dir_step_4) //wall faded
+                else if(!next_pixel_wall_dir) //wall faded
                     {VGA_R, VGA_G, VGA_B} = {(next_pixel[23:16]>>1), (next_pixel[15:8]>>1), (next_pixel[7:0]>>1)};
 
                 else //wall full brightness
@@ -231,7 +237,8 @@ module column_decoder(input logic clk,
 
             //text stuff
         end 
-
+        
+        //for vblank detection
         if(vcount > 10'h1df)
             readdata = 16'h1;
         else
@@ -243,22 +250,22 @@ endmodule
 module columns(
     input logic clk, reset, write,
     input logic [9:0] col_num,
-    input logic [15:0] new_sf_data,
+    input logic [31:0] new_sf_data,
     input logic [41:0] new_col_data,
-    output logic [15:0] sf_data,
+    output logic [31:0] sf_data,
     output logic [41:0] col_data
 );
 
     //declare array https://www.chipverify.com/verilog/verilog-arrays
     logic [41:0] columns [639:0];
-    logic [15:0] sfs [639:0]; //scaling factors
+    logic [31:0] sfs [639:0]; //scaling factors
 
     integer i;
 
     initial begin
         for (i=10'h0; i<10'h280; i=i+10'h1) begin 
             columns[i] <= 42'b0;
-            sfs[i] <= 16'b0;
+            sfs[i] <= 32'b0;
         end
     end
 
@@ -299,6 +306,55 @@ module textures(
     end
 
     assign texture_data = textures[{texture_type, row, col}];
+
+endmodule
+
+
+module chars(
+    input logic clk,
+
+    input logic [10:0] hcount,  // hcount[10:1] is pixel column
+    input logic [9:0]  vcount,
+    
+    input logic [4:0] write_row,
+    input logic [6:0] write_col,
+    input logic [6:0] write_char,
+    input logic       wite,
+    
+    output logic char_on
+);
+
+    logic [7:0] char_data [2047:0];
+    logic [6:0] chars [2399:0];
+
+    logic [4:0] cur_row;
+    logic [3:0] cur_row_offset;
+
+    logic [6:0] cur_col;
+    logic [3:0] cur_col_offset;
+
+    initial begin
+        //$display("Loading font.");
+        $readmemh("font.mem", textures);
+    end
+
+    initial begin
+        for (i=12'h0; i<12'h960; i=i+12'h1) begin 
+            columns[i] <= 7'h0;
+        end
+    end
+
+    always_ff @(posedge clk) begin
+
+        if(write) begin
+            chars[(write_row * 7'h50) + write_col] <= write_char;    
+        end 
+
+        //calc row, row offset, col, col offset 2 clock cycles in advance
+
+        char_on <= char_data[chars[(cur_row * 7'h50) + cur_col]][(cur_row_offset * 4'h8) + cur_col_offset];
+    end
+
 
 endmodule
 
