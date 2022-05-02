@@ -62,6 +62,13 @@ module column_decoder(input logic clk,
 
     logic freeze_pipeline = 1'b0; //freeze the pixel pipeline (during vga_blank_n)
 
+    //character generator state
+    logic [4:0] char_write_row;
+    logic [6:0] char_write_col;
+    logic [6:0] char_write_char;
+    logic       char_write;
+    logic       char_on;
+
     columns columns0(clk, reset, col_write[0], colnum[0], new_sfdata[0], new_coldata[0], sf_data[0], col_data[0]),
             columns1(clk, reset, col_write[1], colnum[1], new_sfdata[1], new_coldata[1], sf_data[1], col_data[1]),
             columns2(clk, reset, col_write[2], colnum[2], new_sfdata[2], new_coldata[2], sf_data[2], col_data[2]);
@@ -71,6 +78,8 @@ module column_decoder(input logic clk,
         texture_col_select, 
         cur_texture_rgb_vals
     );
+
+    chars chars0 (.*);
 
     vga_counters counters(.clk50(clk), .*);
 
@@ -138,13 +147,21 @@ module column_decoder(input logic clk,
             end
             
             else if(address == 4'h2) begin
-
-                //set text stuff
+                char_write_char = writedata[6:0];                
             end
 
             else if(address == 4'h3) begin
+                char_write_row <= writedata[4:0];
+                char_write_col <= writedata[10:5];
+                char_write <= 1'b1;
+            end
+
+            else if(address == 4'h4) begin
                 blackout_screen <= writedata[0];
             end
+
+            if(address != 4'h3)
+                char_write <= 1'b0;
         end
         else
             col_write <= 3'b0;
@@ -235,7 +252,9 @@ module column_decoder(input logic clk,
                     {VGA_R, VGA_G, VGA_B} = next_pixel;
             end
 
-            //text stuff
+            //text character
+            if(char_on)
+                {VGA_R, VGA_G, VGA_B} = {8'hff, 8'hff, 8'hff};
         end 
         
         //for vblank detection
@@ -316,10 +335,10 @@ module chars(
     input logic [10:0] hcount,  // hcount[10:1] is pixel column
     input logic [9:0]  vcount,
     
-    input logic [4:0] write_row,
-    input logic [6:0] write_col,
-    input logic [6:0] write_char,
-    input logic       wite,
+    input logic [4:0] char_write_row,
+    input logic [6:0] char_write_col,
+    input logic [6:0] char_write_char,
+    input logic       char_write,
     
     output logic char_on
 );
@@ -327,34 +346,60 @@ module chars(
     logic [7:0] char_data [2047:0];
     logic [6:0] chars [2399:0];
 
-    logic [4:0] cur_row;
-    logic [3:0] cur_row_offset;
+    logic [4:0] cur_row = 5'h0;
+    logic [3:0] cur_row_offset = 4'h0;
 
-    logic [6:0] cur_col;
-    logic [3:0] cur_col_offset;
+    logic [6:0] cur_col = 7'h0;
+    logic [2:0] cur_col_offset = 4'h0;
+
+    integer i;
 
     initial begin
         //$display("Loading font.");
-        $readmemh("font.mem", textures);
+        $readmemh("font.mem", char_data);
     end
 
     initial begin
         for (i=12'h0; i<12'h960; i=i+12'h1) begin 
-            columns[i] <= 7'h0;
+            chars[i] <= 7'h20; //space
         end
     end
 
     always_ff @(posedge clk) begin
 
-        if(write) begin
-            chars[(write_row * 7'h50) + write_col] <= write_char;    
+        if(char_write) begin
+            chars[(char_write_row * 7'h50) + char_write_col] <= char_write_char;    
         end 
 
-        //calc row, row offset, col, col offset 2 clock cycles in advance
+        //row   
+        if(vcount >= 10'h1e0) begin //480
+            cur_row <= 5'h0;
+            cur_row_offset <= 4'h0;
+
+        end else begin 
+            
+            if(cur_row_offset == 4'h0 && vcount != 10'h0)
+                cur_row <= cur_row + 1;
+
+            if(hcount[10:1] == 10'h280) //640
+                cur_row_offset <= cur_row_offset + 1; 
+        end
+
+        //col
+        if(hcount[10:1] == 10'h31f) begin //799
+            cur_col <= 7'h0;
+            cur_col_offset <= 3'h0;
+        
+        end else if(hcount[10:1] <= 10'h27e && !hcount[0]) begin //638
+            
+            cur_col_offset <= cur_col_offset + 3'h1;
+            
+            if(cur_col_offset == 3'h0 && hcount[10:1] != 10'h0)
+                cur_col <= cur_col + 7'h1;
+        end
 
         char_on <= char_data[chars[(cur_row * 7'h50) + cur_col]][(cur_row_offset * 4'h8) + cur_col_offset];
     end
-
 
 endmodule
 
