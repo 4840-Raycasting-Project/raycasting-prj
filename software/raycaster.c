@@ -728,7 +728,7 @@ void put_char(char character, uint8_t row, uint8_t col) {
 void clear_chars() {
 	
 	for(int row=0; row<CHAR_NUM_ROWS; row++) {
-		for(int col=0; row<CHAR_NUM_COLS; col++)
+		for(int col=0; col<CHAR_NUM_COLS; col++)
 			put_char(' ', row, col);
 	}
 }
