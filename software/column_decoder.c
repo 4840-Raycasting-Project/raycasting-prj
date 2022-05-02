@@ -43,8 +43,9 @@
 /* Device registers */
 #define WRITE_COLNUM_RESET(x) (x)
 #define WRITE_COLS(x) ((x)+2)
-#define WRITE_CHAR(x) ((x)+4)
-#define WRITE_BLACKOUT(x) ((x)+6)
+#define WRITE_CHAR_S1(x) ((x)+4)
+#define WRITE_CHAR_S2(x) ((x)+6)
+#define WRITE_BLACKOUT(x) ((x)+8)
 #define READ_VBLANK(x) (x)
 
 /*
@@ -87,27 +88,14 @@ static void write_columns(columns_t *columns)
 		
 		iowrite16(column_arg.top_of_wall, WRITE_COLS(dev.virtbase));
 		
-		scaling_factor = column_arg.wall_height ? (0x00000000 | ((64 << 25) / column_arg.wall_height)) * -1 : 0x00000000;
+		//TODO figure out why it needs to be multipled by -1: otherwise texture in hardware is upside down
+		scaling_factor = column_arg.wall_height ? (0x00000000 | ((64 << 25) / column_arg.wall_height)) * -1 : 0x00000000; 
 		
-		/*
-		bits_to_send = *( (__u16*) ((&scaling_factor)+2) );
-		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));
-
-		//bits_to_send = *( (__u16*) ((&scaling_factor)+2) );
-		//iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));		
-				
-		bits_to_send = *( (__u16*) (&scaling_factor) );
-		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));
-		*/
-		
-
 		bits_to_send = (__u16) ((scaling_factor & 0xFFFF0000) >> 16);
 		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));
 		
 		bits_to_send = (__u16) (scaling_factor & 0x0000FFFF);
 		iowrite16(bits_to_send, WRITE_COLS(dev.virtbase));
-		
-		
 	}
 	
 	//TODO copy column data manually
@@ -117,7 +105,14 @@ static void write_columns(columns_t *columns)
 
 static void write_char(char_tile_t *char_tile) {
 	
-	//TODO
+	__u16 s2_val;
+  
+	iowrite8(char_tile->char_val, WRITE_CHAR_S1(dev.virtbase));
+	
+	s2_val = char_tile->col << 5;
+	s2_val |= char_tile->row;
+	
+	iowrite16(s2_val, WRITE_CHAR_S2(dev.virtbase));
 }
 
 static void blackout_screen(void) {	
