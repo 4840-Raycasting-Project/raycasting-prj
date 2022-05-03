@@ -113,7 +113,8 @@ void render();
 void create_tables();
 float arc_to_rad(float);
 void handle_key_press(struct usb_keyboard_packet *, bool);
-void put_char(char, uint8_t, uint8_t);
+void put_char(char, uint8_t, uint8_t, uint8_t);
+void put_string(const char *, uint8_t, uint8_t, uint8_t);
 void clear_chars();
 void set_blackout(bool);
 
@@ -178,7 +179,10 @@ int main() {
 	
 	int i = 0;
 	
-	put_char('a', 0, 0);
+	put_char('b',29,79,0);
+	put_char('a',0,0, 0);
+	put_string("HELLO Operator Give me #9", 4, 2, 0);
+	put_string("HELLO Operator Give me #9", 22, 25, 1);
 
     while(true) {
 		
@@ -714,9 +718,12 @@ float arc_to_rad(float arc_angle) {
 
 /*supplemental functions dealing with screen color override and text*/
 
-void put_char(char character, uint8_t row, uint8_t col) {
+void put_char(char c, uint8_t row, uint8_t col, uint8_t highlight) {
 	
-	char_tile_t char_tile = { character, row, col };
+	if(row >= CHAR_NUM_ROWS || col >= CHAR_NUM_COLS)
+	  return;
+	
+	char_tile_t char_tile = { c, row, col, highlight };
 	
 	if (ioctl(column_decoder_fd, COLUMN_DECODER_WRITE_CHAR, &char_tile)) {
 		perror("ioctl(COLUMN_DECODER_WRITE_CHAR) failed");
@@ -727,12 +734,22 @@ void put_char(char character, uint8_t row, uint8_t col) {
 
 void clear_chars() {
 	
-	for(int row=0; row<CHAR_NUM_ROWS; row++) {
-		for(int col=0; col<CHAR_NUM_COLS; col++)
-			put_char(' ', row, col);
+	for(uint8_t row=0; row<CHAR_NUM_ROWS; row++) {
+		for(uint8_t col=0; col<CHAR_NUM_COLS; col++)
+			put_char(' ', row, col, 0);
 	}
 }
 
+void put_string(const char *s, uint8_t row, uint8_t col, uint8_t highlight)
+{
+  char c;
+  
+  if(row >= CHAR_NUM_ROWS)
+	  return;
+  
+  while ((c = *s++) != 0 && col < CHAR_NUM_COLS)
+	  put_char(c, row, col++, highlight);
+}
 
 void set_blackout(bool blackout) {
 	
