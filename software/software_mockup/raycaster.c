@@ -489,16 +489,6 @@ void level_select() {
 	 * 4. HAVEMAYER
 	 * 5. KENT
 	 *
-	 * this should be displayed on the screen with text highlighting
-	 * default highlights MUDD
-	 * scroll up and down with up and down keys
-	 * keep internal counter for level highlighted
-	 * when enter is hit, chose map and render
-	 */
-
-	 //sprintf(keystate, "%02x %02x %02x %02x %02x %02x %02x", packet.modifiers, packet.keycode[0],
-	 //packet.keycode[1],packet.keycode[2],packet.keycode[3],packet.keycode[4],packet.keycode[5]);
-	 //fbputs(keystate, 6, 0);			//for debug
 
 	char *temp_levels[5];
 	
@@ -553,6 +543,33 @@ void level_select() {
 		 fbputs(temp_level[2],12,25,levels == 2 ? 1 : 0);
 		 fbputs(temp_level[3],13,25,levels == 3 ? 1 : 0);
 		 fbputs(temp_level[4],14,25,levels == 4 ? 1 : 0);
+
+		 usleep(100000);
+ 	 }*/
+
+	 while (1) {
+
+
+		if(up_pressed) {
+			if (levels - 1 == -1)
+				continue;
+			levels--;
+			printf("levels: %d\n",levels);
+		}
+		else if(down_pressed) {
+			if (levels + 1 == NUMLEVELS)
+				continue;
+			levels++;
+			printf("levels: %d\n",levels);
+		}
+		else if (enter_pressed)
+			break;
+
+		 fbputs(level[0],10,25,levels == 0 ? 1 : 0);
+		 fbputs(level[1],11,25,levels == 1 ? 1 : 0);
+		 fbputs(level[2],12,25,levels == 2 ? 1 : 0);
+		 fbputs(level[3],13,25,levels == 3 ? 1 : 0);
+		 fbputs(level[4],14,25,levels == 4 ? 1 : 0);
 
 		 usleep(100000);
  	 }
