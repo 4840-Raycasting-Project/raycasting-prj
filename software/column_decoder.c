@@ -108,8 +108,9 @@ static void write_char(char_tile_t *char_tile) {
 	__u16 s2_val;
   
 	iowrite8(char_tile->char_val, WRITE_CHAR_S1(dev.virtbase));
-	
-	s2_val = char_tile->col << 5;
+
+	s2_val = (0x0000 | char_tile->highlight) << 12;
+	s2_val |= ((0x0000 | char_tile->col) << 5);
 	s2_val |= char_tile->row;
 	
 	iowrite16(s2_val, WRITE_CHAR_S2(dev.virtbase));
