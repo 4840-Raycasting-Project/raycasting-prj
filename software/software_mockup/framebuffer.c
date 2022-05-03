@@ -166,36 +166,36 @@ void fbputchar(char c, int row, int col, int highlight) {
 			
 			if (pixels & mask) {	
 			
-				//if (highlight == 1){
-				//	pixel[0] = 0; /* Red */
-				//	pixel[1] = 0; /* Green */
-				//	pixel[2] = 0; /* Blue */
-				//	pixel[3] = 0;
-				//}
-				//else{
+				if (highlight == 1){
+					pixel[0] = 0; /* Red */
+					pixel[1] = 0; /* Green */
+					pixel[2] = 0; /* Blue */
+					pixel[3] = 0;
+				}
+				else{
 					
 					pixel[0] = 255; /* Red */
 					pixel[1] = 255; /* Green */
 					pixel[2] = 255; /* Blue */
 					pixel[3] = 0;
-				//}
+				}
 			} 
 			else {
 				
 				
-				//if (highlight == 1){
-				//	pixel[0] = 255; /* Red */
-				//	pixel[1] = 255; /* Green */
-				//	pixel[2] = 255; /* Blue */
-				//	pixel[3] = 0;
-				//}
-				//else{
+				if (highlight == 1){
+					pixel[0] = 255; /* Red */
+					pixel[1] = 255; /* Green */
+					pixel[2] = 255; /* Blue */
+					pixel[3] = 0;
+				}
+				else{
 					
 					pixel[0] = 0; /* Red */
 					pixel[1] = 0; /* Green */
 					pixel[2] = 0; /* Blue */
 					pixel[3] = 0;
-				//}
+				}
 				
 			}
 			
@@ -203,34 +203,34 @@ void fbputchar(char c, int row, int col, int highlight) {
 			
 			if (pixels & mask) {
 				
-				//if (highlight == 1){
-				//	pixel[0] = 0; /* Red */
-				//	pixel[1] = 0; /* Green */
-				//	pixel[2] = 0; /* Blue */
-				//	pixel[3] = 0;
-				//}
-				//else{
+				if (highlight == 1){
+					pixel[0] = 0; /* Red */
+					pixel[1] = 0; /* Green */
+					pixel[2] = 0; /* Blue */
+					pixel[3] = 0;
+				}
+				else{
 					
 					pixel[0] = 255; /* Red */
 					pixel[1] = 255; /* Green */
 					pixel[2] = 255; /* Blue */
 					pixel[3] = 0;
-				//}
+				}
 			} 
 			else {
-				//if (highlight == 1){
-				//	pixel[0] = 255; /* Red */
-				//	pixel[1] = 255; /* Green */
-				//	pixel[2] = 255; /* Blue */
-				//	pixel[3] = 0;
-				//}
-				//else{
+				if (highlight == 1){
+					pixel[0] = 255; /* Red */
+					pixel[1] = 255; /* Green */
+					pixel[2] = 255; /* Blue */
+					pixel[3] = 0;
+				}
+				else{
 					
 					pixel[0] = 0; /* Red */
 					pixel[1] = 0; /* Green */
 					pixel[2] = 0; /* Blue */
 					pixel[3] = 0;
-				//}
+				}
 		   }
 		   
 		   pixel += 4;
