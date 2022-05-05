@@ -3,13 +3,10 @@ Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
 TODO:
 
-1. Textures for wall - global constants
-2. blackout screen function
-3. fbputchar -> tile buffer hardware char render
-4. port in game logic and menu functionality start and complete a level
-5. jumping demo
-
-8. sprites?
+1. get menu / maze selection working
+2. complete level - back to menu
+3. controller start pressed
+4. add more textures to mazes
 
 */
 
@@ -19,6 +16,7 @@ TODO:
 #include <string.h>
 #include <unistd.h>
 #include "usbdevices.h"
+#include "mazes.h"
 #include <pthread.h>
 #include <stdbool.h> 
 #include <math.h>
@@ -83,23 +81,6 @@ bool fKeyDown = false;
 bool fKeyLeft = false;
 bool fKeyRight = false;
 
-// 2 dimensional map
-static const uint8_t B = 1; // bluestone
-static const uint8_t C = 2; // colorstone
-static const uint8_t E = 3; // eagle
-static const uint8_t G = 4; // greystone
-static const uint8_t M = 5; // mossy
-static const uint8_t P = 6; // purplestone
-static const uint8_t R = 7; // redbrick
-static const uint8_t W = 8; // wood
-
-
-static const uint8_t O = 0; // opening
-static const uint8_t MAP_WIDTH = 12;
-static const uint8_t MAP_HEIGHT = 12;
-
-uint8_t *fMap;
-
 struct libusb_device_handle *keyboard;
 struct libusb_device_handle *controller;
 uint8_t endpoint_address_kb;
@@ -118,8 +99,11 @@ void put_string(const char *, uint8_t, uint8_t, uint8_t);
 void clear_chars();
 void set_blackout(bool);
 
-bool up_pressed, down_pressed, left_pressed, right_pressed;
-bool up_ctr_pressed, down_ctr_pressed, left_ctr_pressed, right_ctr_pressed;
+void menu_select();
+void finish_level();
+
+bool up_pressed, down_pressed, left_pressed, right_pressed, enter_pressed;
+bool up_ctr_pressed, down_ctr_pressed, left_ctr_pressed, right_ctr_pressed, start_ctr_pressed;
 
 bool jump_pressed, jump_pressed_ctr, is_jumping;
 bool sched_jump_start;
@@ -132,6 +116,14 @@ pthread_t controller_thread;
 void *controller_thread_f(void *);
 
 int column_decoder_fd;
+
+//state for level completion / menu
+int selected_maze = 0;
+int level_select_show = 1;
+int level_finished = 0;
+int last_menu_state = 0;
+
+extern maze_t mazes[];
 
 int main() {
     
@@ -166,8 +158,6 @@ int main() {
 	
 	render();
 	
-	int map_size = MAP_HEIGHT * MAP_WIDTH;
-	
 	//reset column number in hardware for good measure
 	if (ioctl(column_decoder_fd, COLUMN_DECODER_RESET_COL_NUM, 0x00)) {
 		perror("ioctl(COLUMN_DECODER_RESET_COL_NUM) failed");
@@ -176,13 +166,6 @@ int main() {
 	
 	set_blackout(false);
 	clear_chars();
-	
-	int i = 0;
-	
-	put_char('b',29,79,0);
-	put_char('a',0,0, 0);
-	put_string("HELLO Operator Give me #9", 4, 2, 0);
-	put_string("HELLO Operator Give me #9", 22, 25, 1);
 
     while(true) {
 		
@@ -194,100 +177,96 @@ int main() {
 		}
 		*/
 		
-		//jump
-		if(sched_jump_start) {
-			
-			is_jumping = true;
-			jump_frame = 0;
-			sched_jump_start = false;
-		}
+		menu_select();
 		
-		if(is_jumping) {
-			
-			jump_frame++;
-			
-			fProjectionPlaneYCenter = (int) (PROJECTIONPLANEHEIGHT / 2) + (
-			
-				(.1 * (jump_frame - 32) * (jump_frame - 32)) - 100
-			);
-			
-			if(fProjectionPlaneYCenter >= (PROJECTIONPLANEHEIGHT / 2)) {
+		if(!level_select_show && !level_finished) {
+		
+			//jump
+			if(sched_jump_start) {
 				
-				fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
-				is_jumping = false;
+				is_jumping = true;
+				jump_frame = 0;
+				sched_jump_start = false;
+			}
+			
+			if(is_jumping) {
+				
+				jump_frame++;
+				
+				fProjectionPlaneYCenter = (int) (PROJECTIONPLANEHEIGHT / 2) + (
+				
+					(.1 * (jump_frame - 32) * (jump_frame - 32)) - 100
+				);
+				
+				if(fProjectionPlaneYCenter >= (PROJECTIONPLANEHEIGHT / 2)) {
+					
+					fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
+					is_jumping = false;
+				}
+			}
+			
+			// rotate left
+			if(left_pressed || left_ctr_pressed) {
+				if((fPlayerArc -= ANGLE5) < ANGLE0)
+					fPlayerArc += ANGLE360;
+			}
+			
+			// rotate right
+			else if(right_pressed || right_ctr_pressed) {
+				if((fPlayerArc += ANGLE5) >= ANGLE360)
+					fPlayerArc -= ANGLE360;
+			}
+
+				//  _____     _
+				// |\ arc     |
+				// |  \       y
+				// |    \     |
+			//            -
+				// |--x--|  
+				//
+				//  sin(arc)=y/diagonal
+				//  cos(arc)=x/diagonal   where diagonal=speed
+			float playerXDir = fCosTable[fPlayerArc];
+			float playerYDir = fSinTable[fPlayerArc];
+
+			// move forward
+			if(up_pressed || up_ctr_pressed) {
+				
+				tmpPlayerX = fPlayerX + (int)(playerXDir * fPlayerSpeed);
+				tmpPlayerY = fPlayerY + (int)(playerYDir * fPlayerSpeed);
+				
+				int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * mazes[selected_maze].height);
+
+				if(map_index < mazes[selected_maze].area && !mazes[selected_maze].map[map_index]) {
+					
+					fPlayerX = tmpPlayerX;
+					fPlayerY = tmpPlayerY;
+				}
+			}
+			
+			// move backward
+			else if(down_pressed || down_ctr_pressed) {
+				
+				tmpPlayerX = fPlayerX - (int)(playerXDir * fPlayerSpeed);
+				tmpPlayerY = fPlayerY - (int)(playerYDir * fPlayerSpeed);
+				
+				int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * mazes[selected_maze].height);
+				
+				if(map_index < mazes[selected_maze].area && !mazes[selected_maze].map[map_index]) {
+					
+					fPlayerX = tmpPlayerX;
+					fPlayerY = tmpPlayerY;
+				}
 			}
 		}
 		
-		// rotate left
-		if(left_pressed || left_ctr_pressed) {
-			if((fPlayerArc -= ANGLE5) < ANGLE0)
-				fPlayerArc += ANGLE360;
-		}
+		//pthread_mutex_unlock(&kp_mutex);	
+
+		//check current texture is eagle, then finish_level();
 		
-		// rotate right
-		else if(right_pressed || right_ctr_pressed) {
-			if((fPlayerArc += ANGLE5) >= ANGLE360)
-				fPlayerArc -= ANGLE360;
-		}
-
-			//  _____     _
-			// |\ arc     |
-			// |  \       y
-			// |    \     |
-		//            -
-			// |--x--|  
-			//
-			//  sin(arc)=y/diagonal
-			//  cos(arc)=x/diagonal   where diagonal=speed
-		float playerXDir = fCosTable[fPlayerArc];
-		float playerYDir = fSinTable[fPlayerArc];
-
-		// move forward
-		if(up_pressed || up_ctr_pressed) {
-			
-			tmpPlayerX = fPlayerX + (int)(playerXDir * fPlayerSpeed);
-			tmpPlayerY = fPlayerY + (int)(playerYDir * fPlayerSpeed);
-			
-			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
-
-			if(map_index < map_size && !fMap[map_index]) {
 				
-				fPlayerX = tmpPlayerX;
-				fPlayerY = tmpPlayerY;
-			}
-		}
-		
-		// move backward
-		else if(down_pressed || down_ctr_pressed) {
-			
-			tmpPlayerX = fPlayerX - (int)(playerXDir * fPlayerSpeed);
-			tmpPlayerY = fPlayerY - (int)(playerYDir * fPlayerSpeed);
-			
-			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
-			
-			if(map_index < map_size && !fMap[map_index]) {
-				
-				fPlayerX = tmpPlayerX;
-				fPlayerY = tmpPlayerY;
-			}
-		}
-		
-		//pthread_mutex_unlock(&kp_mutex);		
-		
-		//test black out every half second
-		/*
-		if((i % 60) > 30)
-			set_blackout(true);
-		else
-			set_blackout(false);
-		*/
-		
 		render();
-		
-		i++;
     }
-	
-	free(fMap);
 	
 	pthread_cancel(keyboard_thread);
     pthread_join(keyboard_thread, NULL);
@@ -296,6 +275,50 @@ int main() {
     pthread_join(controller_thread, NULL);
 
     return 0;
+}
+
+void menu_select() { //will pick up delay inside render because being called inside main loop
+	
+	 if (level_select_show) {
+
+		if(up_pressed || up_ctr_pressed) {
+			
+			if(!last_menu_state && --selected_maze < 0)
+				selected_maze = (NUM_MAZES - 1);
+			
+			last_menu_state = 1;
+		}
+		else if(down_pressed || down_ctr_pressed) {
+			
+			if(!last_menu_state && ++selected_maze == NUM_MAZES)
+				selected_maze = 0;
+			
+			last_menu_state = 1;
+		}
+		else if (enter_pressed || start_ctr_pressed) {
+			
+			level_select_show = 0;
+			last_menu_state = 0;
+			clear_chars();
+			
+			return;
+		}
+		else 
+			last_menu_state = 0;
+		 
+		int start_row = 10;
+		int col = 25;
+		
+		put_string("Choose Your Nightmare...", (start_row-2), col, 0);
+
+		for(int i=0; i<NUM_MAZES; i++)			
+			put_string(mazes[i].name, (start_row+i), col, selected_maze==i);
+ 	 }
+}
+
+void finish_level() {
+	
+	
 }
 
 void *keyboard_thread_f(void *ignored) {
@@ -322,7 +345,8 @@ void *keyboard_thread_f(void *ignored) {
 			down_pressed =  is_key_pressed(0x51, packet.keycode);
 			left_pressed =  is_key_pressed(0x50, packet.keycode);
 			right_pressed = is_key_pressed(0x4f, packet.keycode);
-			jump_pressed =  is_key_pressed(0x2c, packet.keycode);
+			jump_pressed =  is_key_pressed(0x2c, packet.keycode); //spacebar
+			enter_pressed =  is_key_pressed(0x28, packet.keycode);
 			
 			if(jump_pressed && !is_jumping && !prev_jump_state)
 				sched_jump_start = true;
@@ -361,7 +385,7 @@ void *controller_thread_f(void *ignored) {
 				down_ctr_pressed 	= is_controller_key_pressed(2, 0xff, packet.keycode);
 				left_ctr_pressed 	= is_controller_key_pressed(1, 0x00, packet.keycode);
 				right_ctr_pressed 	= is_controller_key_pressed(1, 0xff, packet.keycode);
-				jump_pressed_ctr	= is_controller_key_pressed(3, 0x2f, packet.keycode);
+				jump_pressed_ctr	= is_controller_key_pressed(3, 0x2f, packet.keycode); //a btn
 				
 				if(jump_pressed_ctr && !is_jumping && !prev_jump_state_ctr)
 					sched_jump_start = true;
@@ -372,6 +396,7 @@ void *controller_thread_f(void *ignored) {
 				left_ctr_pressed 	= false;
 				right_ctr_pressed 	= false;
 				jump_pressed_ctr	= false;
+				start_ctr_pressed  	= false;
 			}
 			
 			//pthread_cond_signal(&kp_cond);
@@ -467,16 +492,16 @@ void render() {
                 // in the picture, yGridIndex will be 1
                 yGridIndex = (horizontalGrid / TILE_SIZE);
 
-                if((xGridIndex >= MAP_WIDTH) ||
-                    (yGridIndex >= MAP_HEIGHT) ||
+                if((xGridIndex >= mazes[selected_maze].width) ||
+                    (yGridIndex >= mazes[selected_maze].height) ||
                     xGridIndex < 0 || yGridIndex < 0) {
 
                     distToHorizontalGridBeingHit = __FLT_MAX__;
                     break;
                 }
-                else if (fMap[yGridIndex * MAP_WIDTH + xGridIndex]) {
+                else if (mazes[selected_maze].map[yGridIndex * mazes[selected_maze].width + xGridIndex]) {
 					
-					textureH = fMap[yGridIndex * MAP_WIDTH + xGridIndex] - 1;
+					textureH = mazes[selected_maze].map[yGridIndex * mazes[selected_maze].width + xGridIndex] - 1;
                     distToHorizontalGridBeingHit  = (xIntersection-fPlayerX)*fICosTable[castArc];
                     break;
                 }
@@ -522,15 +547,15 @@ void render() {
                 xGridIndex = (verticalGrid / TILE_SIZE);
                 yGridIndex = (int)(yIntersection / TILE_SIZE);
 
-                if ((xGridIndex >= MAP_WIDTH) ||
-                    (yGridIndex >= MAP_HEIGHT) ||
+                if ((xGridIndex >= mazes[selected_maze].width) ||
+                    (yGridIndex >= mazes[selected_maze].height) ||
                     xGridIndex < 0 || yGridIndex < 0) {
                     distToVerticalGridBeingHit = __FLT_MAX__;
                     break;
                 }
-                else if (fMap[yGridIndex * MAP_WIDTH + xGridIndex]) {
+                else if (mazes[selected_maze].map[yGridIndex * mazes[selected_maze].width + xGridIndex]) {
 					
-					textureV = fMap[yGridIndex * MAP_WIDTH + xGridIndex] - 1;
+					textureV = mazes[selected_maze].map[yGridIndex * mazes[selected_maze].width + xGridIndex] - 1;
                     distToVerticalGridBeingHit = (yIntersection - fPlayerY) * fISinTable[castArc];
                     break;
                 }
@@ -600,7 +625,7 @@ void render() {
         if (castArc >= ANGLE360)
             castArc -= ANGLE360;
     }
-	//usleep(16667);
+
 	//wait for vblank to send columns
 	while(true) {
 		
@@ -684,29 +709,6 @@ void create_tables() {
         // this will give range 0 to 320
         fFishTable[i + ANGLE30] = (float)(1.0F / cos(radian));
     }
-	
-	fMap = (uint8_t*)calloc((MAP_HEIGHT * MAP_WIDTH), sizeof(uint8_t));
-	
-	//types: B: bluestone, C: colorstone, E: eagle, G: greystone, M: mossy, P: purplestone, R: redbrick, W: wood
-	
-	uint8_t fMapCopy[] =
-		{
-			W,W,W,W,W,B,W,E,W,P,W,W,
-			W,O,O,O,O,O,O,O,O,O,O,W,
-			W,O,O,O,O,O,O,O,O,O,O,W,
-			W,O,O,O,O,O,O,O,W,O,O,W,
-			W,O,O,W,O,W,O,O,W,O,O,W,
-			W,O,O,W,O,W,W,O,W,O,O,W,
-			W,O,O,W,O,O,W,O,W,O,O,W,
-			W,O,O,O,W,O,W,O,W,O,O,W,
-			W,O,O,O,W,O,W,O,W,O,O,W,
-			W,O,O,O,W,W,W,O,W,O,O,W,
-			W,O,O,O,O,O,O,O,O,O,O,W,
-			W,W,W,W,W,W,W,W,W,W,W,W
-		};
-		
-	for (i=0; i < (MAP_HEIGHT * MAP_WIDTH); i++)
-		fMap[i] = fMapCopy[i];
 }
 
   //*******************************************************************//
