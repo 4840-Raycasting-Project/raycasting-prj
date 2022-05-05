@@ -3,10 +3,10 @@ Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
 TODO:
 
-1. get menu / maze selection working
-2. complete level - back to menu
+2. complete level by hitting E - back to menu + reset location
 3. controller start pressed
 4. add more textures to mazes
+5. start / enter brings up menu? - reset location or store temp - or only show other 2 with default locations (switch levels)
 
 */
 
