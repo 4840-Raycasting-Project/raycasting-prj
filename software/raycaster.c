@@ -242,6 +242,8 @@ int main() {
 					fPlayerX = tmpPlayerX;
 					fPlayerY = tmpPlayerY;
 				}
+				else if(mazes[selected_maze].map[map_index] == E)
+					finish_level();
 			}
 			
 			// move backward
@@ -257,6 +259,8 @@ int main() {
 					fPlayerX = tmpPlayerX;
 					fPlayerY = tmpPlayerY;
 				}
+				else if(mazes[selected_maze].map[map_index] == E)
+					finish_level();
 			}
 		}
 		
@@ -301,6 +305,8 @@ void menu_select() { //will pick up delay inside render because being called ins
 			last_menu_state = 0;
 			clear_chars();
 			
+			put_string("Find the Eagle", 0, 33, 0);
+			
 			return;
 		}
 		else 
@@ -318,7 +324,20 @@ void menu_select() { //will pick up delay inside render because being called ins
 
 void finish_level() {
 	
+	clear_chars();
+	set_blackout(true);
 	
+	put_string("Great job, definitely getting an A", 14, 23, 0);
+	
+	sleep(5);
+	
+	fPlayerX = 100;
+	fPlayerY = 160;
+	
+	clear_chars();
+	set_blackout(false);
+	
+	level_select_show = 1;
 }
 
 void *keyboard_thread_f(void *ignored) {
@@ -345,7 +364,7 @@ void *keyboard_thread_f(void *ignored) {
 			down_pressed =  is_key_pressed(0x51, packet.keycode);
 			left_pressed =  is_key_pressed(0x50, packet.keycode);
 			right_pressed = is_key_pressed(0x4f, packet.keycode);
-			jump_pressed =  is_key_pressed(0x2c, packet.keycode); //spacebar
+			jump_pressed =  is_key_pressed(0x2c, packet.keycode) && !level_select_show; //spacebar
 			enter_pressed =  is_key_pressed(0x28, packet.keycode);
 			
 			if(jump_pressed && !is_jumping && !prev_jump_state)
@@ -366,7 +385,7 @@ void *controller_thread_f(void *ignored) {
 	bool prev_jump_state_ctr;
 	
 	struct usb_keyboard_packet packet;
-;	
+
 	while(true) {
 		
 		libusb_interrupt_transfer(controller, endpoint_address_ctr,
@@ -379,13 +398,14 @@ void *controller_thread_f(void *ignored) {
 
 			//pthread_mutex_lock(&kp_mutex);
 			
-			if (packet.keycode[1] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_BTN_DEFAULT) { 
+			if (packet.keycode[1] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_BTN_DEFAULT || packet.keycode[4] != 0) { 
 
 				up_ctr_pressed 		= is_controller_key_pressed(2, 0x00, packet.keycode);
 				down_ctr_pressed 	= is_controller_key_pressed(2, 0xff, packet.keycode);
 				left_ctr_pressed 	= is_controller_key_pressed(1, 0x00, packet.keycode);
 				right_ctr_pressed 	= is_controller_key_pressed(1, 0xff, packet.keycode);
-				jump_pressed_ctr	= is_controller_key_pressed(3, 0x2f, packet.keycode); //a btn
+				jump_pressed_ctr	= is_controller_key_pressed(3, 0x2f, packet.keycode) && !level_select_show; //a btn
+				start_ctr_pressed   = is_controller_key_pressed(4, 0x20, packet.keycode);
 				
 				if(jump_pressed_ctr && !is_jumping && !prev_jump_state_ctr)
 					sched_jump_start = true;
