@@ -1,11 +1,7 @@
 /*
 Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
-TODO:
-
-4. add more textures to mazes
-5. start / enter brings up menu? - reset location or store temp - or only show other 2 with default locations (switch levels)
-
+2022 Adam Carpentieri (ac4409@columbia.edu) and Souryadeep Sen (ss6400@columbia.edu)
 */
 
 #include "column_decoder.h"
