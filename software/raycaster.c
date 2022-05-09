@@ -3,8 +3,6 @@ Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
 TODO:
 
-2. complete level by hitting E - back to menu + reset location
-3. controller start pressed
 4. add more textures to mazes
 5. start / enter brings up menu? - reset location or store temp - or only show other 2 with default locations (switch levels)
 
@@ -53,6 +51,10 @@ TODO:
 
 #define CHAR_NUM_ROWS 30
 #define CHAR_NUM_COLS 80
+
+//where the game will drop you on the map (FIXME make part of maze_t spec for per-map customization)
+#define STARTING_POINT_X 100
+#define STARTING_POINT_Y 160
  
 columns_t columns;
 
@@ -68,9 +70,9 @@ float fXStepTable[ANGLE360+1];
 float fYStepTable[ANGLE360+1];
 
 // player's attributes
-int fPlayerX = 100; int tmpPlayerX;
-int fPlayerY = 160; int tmpPlayerY;
-int fPlayerArc = ANGLE0;
+int fPlayerX = STARTING_POINT_X; int tmpPlayerX; int storedPlayerX;
+int fPlayerY = STARTING_POINT_Y; int tmpPlayerY; int storedPlayerY;
+int fPlayerArc = ANGLE0; int storedPlayerArc;
 int fPlayerDistanceToTheProjectionPlane = 677;
 int fPlayerSpeed = 6;
 int fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
@@ -118,10 +120,13 @@ void *controller_thread_f(void *);
 int column_decoder_fd;
 
 //state for level completion / menu
-int selected_maze = 0;
-int level_select_show = 1;
-int level_finished = 0;
-int last_menu_state = 0;
+int selected_maze = 0; int cur_selected_maze;
+bool level_select_show = true;
+bool level_finished = false;
+bool menu_has_scrolled = false;
+bool is_paused = false;
+bool just_paused = false;
+bool level_selected = false;
 
 extern maze_t mazes[];
 
@@ -177,10 +182,29 @@ int main() {
 		}
 		*/
 		
+		if(!start_ctr_pressed && !enter_pressed) {
+		
+			just_paused = false;
+			level_selected = false;
+		}		
+		
 		menu_select();
 		
 		if(!level_select_show && !level_finished) {
-		
+			
+			//pause menu
+			if((start_ctr_pressed || enter_pressed) && !is_paused && !level_selected) {
+				
+				clear_chars();
+				is_paused = true;
+				level_select_show = true;
+				storedPlayerX = fPlayerX;
+				storedPlayerY = fPlayerY;
+				storedPlayerArc = fPlayerArc;
+				cur_selected_maze = selected_maze;
+				just_paused = true;
+			}
+			
 			//jump
 			if(sched_jump_start) {
 				
@@ -287,22 +311,36 @@ void menu_select() { //will pick up delay inside render because being called ins
 
 		if(up_pressed || up_ctr_pressed) {
 			
-			if(!last_menu_state && --selected_maze < 0)
+			if(!menu_has_scrolled && --selected_maze < 0)
 				selected_maze = (NUM_MAZES - 1);
 			
-			last_menu_state = 1;
+			menu_has_scrolled = true;
+			
+			if(is_paused) {
+				fPlayerX = selected_maze == cur_selected_maze ? storedPlayerX : STARTING_POINT_X;
+				fPlayerY = selected_maze == cur_selected_maze ? storedPlayerY : STARTING_POINT_Y;
+				fPlayerArc = selected_maze == cur_selected_maze ? storedPlayerArc : ANGLE0;
+			}
 		}
 		else if(down_pressed || down_ctr_pressed) {
 			
-			if(!last_menu_state && ++selected_maze == NUM_MAZES)
-				selected_maze = 0;
+			if(!menu_has_scrolled && ++selected_maze == NUM_MAZES)
+				selected_maze = false;
 			
-			last_menu_state = 1;
+			menu_has_scrolled = true;
+			
+			if(is_paused) {
+				fPlayerX = selected_maze == cur_selected_maze ? storedPlayerX : STARTING_POINT_X;
+				fPlayerY = selected_maze == cur_selected_maze ? storedPlayerY : STARTING_POINT_Y;
+				fPlayerArc = selected_maze == cur_selected_maze ? storedPlayerArc : ANGLE0;
+			}			
 		}
-		else if (enter_pressed || start_ctr_pressed) {
+		else if ((enter_pressed || start_ctr_pressed) && !just_paused) {
 			
-			level_select_show = 0;
-			last_menu_state = 0;
+			level_select_show = false;
+			menu_has_scrolled = false;
+			is_paused = false;
+			level_selected = true;
 			clear_chars();
 			
 			put_string("Find the Eagle", 0, 33, 0);
@@ -310,15 +348,27 @@ void menu_select() { //will pick up delay inside render because being called ins
 			return;
 		}
 		else 
-			last_menu_state = 0;
+			menu_has_scrolled = false;
 		 
 		int start_row = 10;
 		int col = 25;
+		char selection_title[40];
 		
-		put_string("Choose Your Nightmare...", (start_row-2), col, 0);
+		put_string((is_paused ? "Giving Up So Soon?" : "Choose Your Nightmare..."), (start_row-2), col, 0);
 
-		for(int i=0; i<NUM_MAZES; i++)			
-			put_string(mazes[i].name, (start_row+i), col, selected_maze==i);
+		for(int i=0; i<NUM_MAZES; i++) {
+			
+			if(is_paused && i == cur_selected_maze) {
+				
+				strcpy(selection_title, "Back to ");
+				
+				strcat(selection_title, mazes[i].name);
+			}
+			else
+				strcpy(selection_title, mazes[i].name);
+			
+			put_string(selection_title, (start_row+i), col, selected_maze==i);
+		}
  	 }
 }
 
@@ -331,13 +381,14 @@ void finish_level() {
 	
 	sleep(5);
 	
-	fPlayerX = 100;
-	fPlayerY = 160;
+	fPlayerX = STARTING_POINT_X;
+	fPlayerY = STARTING_POINT_Y;
+	fPlayerArc = ANGLE0;
 	
 	clear_chars();
 	set_blackout(false);
 	
-	level_select_show = 1;
+	level_select_show = true;
 }
 
 void *keyboard_thread_f(void *ignored) {
