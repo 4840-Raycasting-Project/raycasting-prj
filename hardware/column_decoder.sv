@@ -5,11 +5,6 @@
  * Adam Carpentieri AC4409
  * Columbia University
 
-    TODO:
-    3. Ceiling and floor gradients / colors
-    4. Blackout screen toggle
-    5. Text module
-    
  */
 
 module column_decoder(input logic clk,
