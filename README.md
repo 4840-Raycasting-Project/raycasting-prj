@@ -12,6 +12,7 @@ Members/Collaborators:
 
 ### Tools required (On a Linux machine)
 
+```
 - Software: 
 	  - gcc: sudo apt install gcc  
 	  - make: sudo apt-get install build-essential  
@@ -25,7 +26,12 @@ Members/Collaborators:
 	  - Follow lab3 slides to build the vga module 
 	  - Verilator/GTKwave: for simulation, if you desire   
 
+```
+
+
 ### Hardware required for game  
+
+```
 
 - Intel DE1 SOC development kit
 - Any USB keyboard
@@ -33,11 +39,16 @@ Members/Collaborators:
 - VGA cable
 - Micro USB
 
+```
+
 ### Compiling the code  
+
+```
 
 - Software: https://github.com/4840-Raycasting-Project/raycasting-prj/blob/master/software/README
 - Hardware: Please follow lab3 guide
 
+```
 
 ### Inside the game  
 
