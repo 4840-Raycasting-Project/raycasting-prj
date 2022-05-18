@@ -1,16 +1,7 @@
 /*
 Adapted from https://permadi.com/activity/ray-casting-game-engine-demo/
 
-TODO:
-
-1. Textures for wall - global constants
-2. blackout screen function
-3. fbputchar -> tile buffer hardware char render
-4. port in game logic and menu functionality start and complete a level
-5. jumping demo
-
-8. sprites?
-
+2022 Adam Carpentieri (ac4409@columbia.edu) and Souryadeep Sen (ss6400@columbia.edu)
 */
 
 #include "column_decoder.h"
@@ -19,6 +10,7 @@ TODO:
 #include <string.h>
 #include <unistd.h>
 #include "usbdevices.h"
+#include "mazes.h"
 #include <pthread.h>
 #include <stdbool.h> 
 #include <math.h>
@@ -55,6 +47,10 @@ TODO:
 
 #define CHAR_NUM_ROWS 30
 #define CHAR_NUM_COLS 80
+
+//where the game will drop you on the map (FIXME make part of maze_t spec for per-map customization)
+#define STARTING_POINT_X 100
+#define STARTING_POINT_Y 160
  
 columns_t columns;
 
@@ -70,9 +66,9 @@ float fXStepTable[ANGLE360+1];
 float fYStepTable[ANGLE360+1];
 
 // player's attributes
-int fPlayerX = 100; int tmpPlayerX;
-int fPlayerY = 160; int tmpPlayerY;
-int fPlayerArc = ANGLE0;
+int fPlayerX = STARTING_POINT_X; int tmpPlayerX; int storedPlayerX;
+int fPlayerY = STARTING_POINT_Y; int tmpPlayerY; int storedPlayerY;
+int fPlayerArc = ANGLE0; int storedPlayerArc;
 int fPlayerDistanceToTheProjectionPlane = 677;
 int fPlayerSpeed = 6;
 int fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
@@ -82,23 +78,6 @@ bool fKeyUp = false;
 bool fKeyDown = false;
 bool fKeyLeft = false;
 bool fKeyRight = false;
-
-// 2 dimensional map
-static const uint8_t B = 1; // bluestone
-static const uint8_t C = 2; // colorstone
-static const uint8_t E = 3; // eagle
-static const uint8_t G = 4; // greystone
-static const uint8_t M = 5; // mossy
-static const uint8_t P = 6; // purplestone
-static const uint8_t R = 7; // redbrick
-static const uint8_t W = 8; // wood
-
-
-static const uint8_t O = 0; // opening
-static const uint8_t MAP_WIDTH = 12;
-static const uint8_t MAP_HEIGHT = 12;
-
-uint8_t *fMap;
 
 struct libusb_device_handle *keyboard;
 struct libusb_device_handle *controller;
@@ -113,12 +92,16 @@ void render();
 void create_tables();
 float arc_to_rad(float);
 void handle_key_press(struct usb_keyboard_packet *, bool);
-void put_char(char, uint8_t, uint8_t);
+void put_char(char, uint8_t, uint8_t, uint8_t);
+void put_string(const char *, uint8_t, uint8_t, uint8_t);
 void clear_chars();
 void set_blackout(bool);
 
-bool up_pressed, down_pressed, left_pressed, right_pressed;
-bool up_ctr_pressed, down_ctr_pressed, left_ctr_pressed, right_ctr_pressed;
+void menu_select();
+void finish_level();
+
+bool up_pressed, down_pressed, left_pressed, right_pressed, enter_pressed;
+bool up_ctr_pressed, down_ctr_pressed, left_ctr_pressed, right_ctr_pressed, start_ctr_pressed;
 
 bool jump_pressed, jump_pressed_ctr, is_jumping;
 bool sched_jump_start;
@@ -131,6 +114,17 @@ pthread_t controller_thread;
 void *controller_thread_f(void *);
 
 int column_decoder_fd;
+
+//state for level completion / menu
+int selected_maze = 0; int cur_selected_maze;
+bool level_select_show = true;
+bool level_finished = false;
+bool menu_has_scrolled = false;
+bool is_paused = false;
+bool just_paused = false;
+bool level_selected = false;
+
+extern maze_t mazes[];
 
 int main() {
     
@@ -165,8 +159,6 @@ int main() {
 	
 	render();
 	
-	int map_size = MAP_HEIGHT * MAP_WIDTH;
-	
 	//reset column number in hardware for good measure
 	if (ioctl(column_decoder_fd, COLUMN_DECODER_RESET_COL_NUM, 0x00)) {
 		perror("ioctl(COLUMN_DECODER_RESET_COL_NUM) failed");
@@ -175,10 +167,6 @@ int main() {
 	
 	set_blackout(false);
 	clear_chars();
-	
-	int i = 0;
-	
-	put_char('a', 0, 0);
 
     while(true) {
 		
@@ -190,100 +178,119 @@ int main() {
 		}
 		*/
 		
-		//jump
-		if(sched_jump_start) {
-			
-			is_jumping = true;
-			jump_frame = 0;
-			sched_jump_start = false;
-		}
+		if(!start_ctr_pressed && !enter_pressed) {
 		
-		if(is_jumping) {
+			just_paused = false;
+			level_selected = false;
+		}		
+		
+		menu_select();
+		
+		if(!level_select_show && !level_finished) {
 			
-			jump_frame++;
-			
-			fProjectionPlaneYCenter = (int) (PROJECTIONPLANEHEIGHT / 2) + (
-			
-				(.1 * (jump_frame - 32) * (jump_frame - 32)) - 100
-			);
-			
-			if(fProjectionPlaneYCenter >= (PROJECTIONPLANEHEIGHT / 2)) {
+			//pause menu
+			if((start_ctr_pressed || enter_pressed) && !is_paused && !level_selected) {
 				
-				fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
-				is_jumping = false;
+				clear_chars();
+				is_paused = true;
+				level_select_show = true;
+				storedPlayerX = fPlayerX;
+				storedPlayerY = fPlayerY;
+				storedPlayerArc = fPlayerArc;
+				cur_selected_maze = selected_maze;
+				just_paused = true;
+			}
+			
+			//jump
+			if(sched_jump_start) {
+				
+				is_jumping = true;
+				jump_frame = 0;
+				sched_jump_start = false;
+			}
+			
+			if(is_jumping) {
+				
+				jump_frame++;
+				
+				fProjectionPlaneYCenter = (int) (PROJECTIONPLANEHEIGHT / 2) + (
+				
+					(.1 * (jump_frame - 32) * (jump_frame - 32)) - 100
+				);
+				
+				if(fProjectionPlaneYCenter >= (PROJECTIONPLANEHEIGHT / 2)) {
+					
+					fProjectionPlaneYCenter = PROJECTIONPLANEHEIGHT / 2;
+					is_jumping = false;
+				}
+			}
+			
+			// rotate left
+			if(left_pressed || left_ctr_pressed) {
+				if((fPlayerArc -= ANGLE5) < ANGLE0)
+					fPlayerArc += ANGLE360;
+			}
+			
+			// rotate right
+			else if(right_pressed || right_ctr_pressed) {
+				if((fPlayerArc += ANGLE5) >= ANGLE360)
+					fPlayerArc -= ANGLE360;
+			}
+
+				//  _____     _
+				// |\ arc     |
+				// |  \       y
+				// |    \     |
+			//            -
+				// |--x--|  
+				//
+				//  sin(arc)=y/diagonal
+				//  cos(arc)=x/diagonal   where diagonal=speed
+			float playerXDir = fCosTable[fPlayerArc];
+			float playerYDir = fSinTable[fPlayerArc];
+
+			// move forward
+			if(up_pressed || up_ctr_pressed) {
+				
+				tmpPlayerX = fPlayerX + (int)(playerXDir * fPlayerSpeed);
+				tmpPlayerY = fPlayerY + (int)(playerYDir * fPlayerSpeed);
+				
+				int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * mazes[selected_maze].height);
+
+				if(map_index < mazes[selected_maze].area && !mazes[selected_maze].map[map_index]) {
+					
+					fPlayerX = tmpPlayerX;
+					fPlayerY = tmpPlayerY;
+				}
+				else if(mazes[selected_maze].map[map_index] == E)
+					finish_level();
+			}
+			
+			// move backward
+			else if(down_pressed || down_ctr_pressed) {
+				
+				tmpPlayerX = fPlayerX - (int)(playerXDir * fPlayerSpeed);
+				tmpPlayerY = fPlayerY - (int)(playerYDir * fPlayerSpeed);
+				
+				int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * mazes[selected_maze].height);
+				
+				if(map_index < mazes[selected_maze].area && !mazes[selected_maze].map[map_index]) {
+					
+					fPlayerX = tmpPlayerX;
+					fPlayerY = tmpPlayerY;
+				}
+				else if(mazes[selected_maze].map[map_index] == E)
+					finish_level();
 			}
 		}
 		
-		// rotate left
-		if(left_pressed || left_ctr_pressed) {
-			if((fPlayerArc -= ANGLE5) < ANGLE0)
-				fPlayerArc += ANGLE360;
-		}
+		//pthread_mutex_unlock(&kp_mutex);	
+
+		//check current texture is eagle, then finish_level();
 		
-		// rotate right
-		else if(right_pressed || right_ctr_pressed) {
-			if((fPlayerArc += ANGLE5) >= ANGLE360)
-				fPlayerArc -= ANGLE360;
-		}
-
-			//  _____     _
-			// |\ arc     |
-			// |  \       y
-			// |    \     |
-		//            -
-			// |--x--|  
-			//
-			//  sin(arc)=y/diagonal
-			//  cos(arc)=x/diagonal   where diagonal=speed
-		float playerXDir = fCosTable[fPlayerArc];
-		float playerYDir = fSinTable[fPlayerArc];
-
-		// move forward
-		if(up_pressed || up_ctr_pressed) {
-			
-			tmpPlayerX = fPlayerX + (int)(playerXDir * fPlayerSpeed);
-			tmpPlayerY = fPlayerY + (int)(playerYDir * fPlayerSpeed);
-			
-			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
-
-			if(map_index < map_size && !fMap[map_index]) {
 				
-				fPlayerX = tmpPlayerX;
-				fPlayerY = tmpPlayerY;
-			}
-		}
-		
-		// move backward
-		else if(down_pressed || down_ctr_pressed) {
-			
-			tmpPlayerX = fPlayerX - (int)(playerXDir * fPlayerSpeed);
-			tmpPlayerY = fPlayerY - (int)(playerYDir * fPlayerSpeed);
-			
-			int map_index = (tmpPlayerX / TILE_SIZE) + ((tmpPlayerY / TILE_SIZE) * MAP_HEIGHT);
-			
-			if(map_index < map_size && !fMap[map_index]) {
-				
-				fPlayerX = tmpPlayerX;
-				fPlayerY = tmpPlayerY;
-			}
-		}
-		
-		//pthread_mutex_unlock(&kp_mutex);		
-		
-		//test black out every half second
-		/*
-		if((i % 60) > 30)
-			set_blackout(true);
-		else
-			set_blackout(false);
-		*/
-		
 		render();
-		
-		i++;
     }
-	
-	free(fMap);
 	
 	pthread_cancel(keyboard_thread);
     pthread_join(keyboard_thread, NULL);
@@ -292,6 +299,92 @@ int main() {
     pthread_join(controller_thread, NULL);
 
     return 0;
+}
+
+void menu_select() { //will pick up delay inside render because being called inside main loop
+	
+	 if (level_select_show) {
+
+		if(up_pressed || up_ctr_pressed) {
+			
+			if(!menu_has_scrolled && --selected_maze < 0)
+				selected_maze = (NUM_MAZES - 1);
+			
+			menu_has_scrolled = true;
+			
+			if(is_paused) {
+				fPlayerX = selected_maze == cur_selected_maze ? storedPlayerX : STARTING_POINT_X;
+				fPlayerY = selected_maze == cur_selected_maze ? storedPlayerY : STARTING_POINT_Y;
+				fPlayerArc = selected_maze == cur_selected_maze ? storedPlayerArc : ANGLE0;
+			}
+		}
+		else if(down_pressed || down_ctr_pressed) {
+			
+			if(!menu_has_scrolled && ++selected_maze == NUM_MAZES)
+				selected_maze = false;
+			
+			menu_has_scrolled = true;
+			
+			if(is_paused) {
+				fPlayerX = selected_maze == cur_selected_maze ? storedPlayerX : STARTING_POINT_X;
+				fPlayerY = selected_maze == cur_selected_maze ? storedPlayerY : STARTING_POINT_Y;
+				fPlayerArc = selected_maze == cur_selected_maze ? storedPlayerArc : ANGLE0;
+			}			
+		}
+		else if ((enter_pressed || start_ctr_pressed) && !just_paused) {
+			
+			level_select_show = false;
+			menu_has_scrolled = false;
+			is_paused = false;
+			level_selected = true;
+			clear_chars();
+			
+			put_string("Find the Eagle", 0, 33, 0);
+			
+			return;
+		}
+		else 
+			menu_has_scrolled = false;
+		 
+		int start_row = 10;
+		int col = 25;
+		char selection_title[40];
+		
+		put_string((is_paused ? "Giving Up So Soon?" : "Choose Your Nightmare..."), (start_row-2), col, 0);
+
+		for(int i=0; i<NUM_MAZES; i++) {
+			
+			if(is_paused && i == cur_selected_maze) {
+				
+				strcpy(selection_title, "Back to ");
+				
+				strcat(selection_title, mazes[i].name);
+			}
+			else
+				strcpy(selection_title, mazes[i].name);
+			
+			put_string(selection_title, (start_row+i), col, selected_maze==i);
+		}
+ 	 }
+}
+
+void finish_level() {
+	
+	clear_chars();
+	set_blackout(true);
+	
+	put_string("Great job, definitely getting an A", 14, 23, 0);
+	
+	sleep(5);
+	
+	fPlayerX = STARTING_POINT_X;
+	fPlayerY = STARTING_POINT_Y;
+	fPlayerArc = ANGLE0;
+	
+	clear_chars();
+	set_blackout(false);
+	
+	level_select_show = true;
 }
 
 void *keyboard_thread_f(void *ignored) {
@@ -318,7 +411,8 @@ void *keyboard_thread_f(void *ignored) {
 			down_pressed =  is_key_pressed(0x51, packet.keycode);
 			left_pressed =  is_key_pressed(0x50, packet.keycode);
 			right_pressed = is_key_pressed(0x4f, packet.keycode);
-			jump_pressed =  is_key_pressed(0x2c, packet.keycode);
+			jump_pressed =  is_key_pressed(0x2c, packet.keycode) && !level_select_show; //spacebar
+			enter_pressed =  is_key_pressed(0x28, packet.keycode);
 			
 			if(jump_pressed && !is_jumping && !prev_jump_state)
 				sched_jump_start = true;
@@ -338,7 +432,7 @@ void *controller_thread_f(void *ignored) {
 	bool prev_jump_state_ctr;
 	
 	struct usb_keyboard_packet packet;
-;	
+
 	while(true) {
 		
 		libusb_interrupt_transfer(controller, endpoint_address_ctr,
@@ -351,13 +445,14 @@ void *controller_thread_f(void *ignored) {
 
 			//pthread_mutex_lock(&kp_mutex);
 			
-			if (packet.keycode[1] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_BTN_DEFAULT) { 
+			if (packet.keycode[1] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_DPAD_DEFAULT || packet.keycode[2] != CONTROLLER_BTN_DEFAULT || packet.keycode[4] != 0) { 
 
 				up_ctr_pressed 		= is_controller_key_pressed(2, 0x00, packet.keycode);
 				down_ctr_pressed 	= is_controller_key_pressed(2, 0xff, packet.keycode);
 				left_ctr_pressed 	= is_controller_key_pressed(1, 0x00, packet.keycode);
 				right_ctr_pressed 	= is_controller_key_pressed(1, 0xff, packet.keycode);
-				jump_pressed_ctr	= is_controller_key_pressed(3, 0x2f, packet.keycode);
+				jump_pressed_ctr	= is_controller_key_pressed(3, 0x2f, packet.keycode) && !level_select_show; //a btn
+				start_ctr_pressed   = is_controller_key_pressed(4, 0x20, packet.keycode);
 				
 				if(jump_pressed_ctr && !is_jumping && !prev_jump_state_ctr)
 					sched_jump_start = true;
@@ -368,6 +463,7 @@ void *controller_thread_f(void *ignored) {
 				left_ctr_pressed 	= false;
 				right_ctr_pressed 	= false;
 				jump_pressed_ctr	= false;
+				start_ctr_pressed  	= false;
 			}
 			
 			//pthread_cond_signal(&kp_cond);
@@ -463,16 +559,16 @@ void render() {
                 // in the picture, yGridIndex will be 1
                 yGridIndex = (horizontalGrid / TILE_SIZE);
 
-                if((xGridIndex >= MAP_WIDTH) ||
-                    (yGridIndex >= MAP_HEIGHT) ||
+                if((xGridIndex >= mazes[selected_maze].width) ||
+                    (yGridIndex >= mazes[selected_maze].height) ||
                     xGridIndex < 0 || yGridIndex < 0) {
 
                     distToHorizontalGridBeingHit = __FLT_MAX__;
                     break;
                 }
-                else if (fMap[yGridIndex * MAP_WIDTH + xGridIndex]) {
+                else if (mazes[selected_maze].map[yGridIndex * mazes[selected_maze].width + xGridIndex]) {
 					
-					textureH = fMap[yGridIndex * MAP_WIDTH + xGridIndex] - 1;
+					textureH = mazes[selected_maze].map[yGridIndex * mazes[selected_maze].width + xGridIndex] - 1;
                     distToHorizontalGridBeingHit  = (xIntersection-fPlayerX)*fICosTable[castArc];
                     break;
                 }
@@ -518,15 +614,15 @@ void render() {
                 xGridIndex = (verticalGrid / TILE_SIZE);
                 yGridIndex = (int)(yIntersection / TILE_SIZE);
 
-                if ((xGridIndex >= MAP_WIDTH) ||
-                    (yGridIndex >= MAP_HEIGHT) ||
+                if ((xGridIndex >= mazes[selected_maze].width) ||
+                    (yGridIndex >= mazes[selected_maze].height) ||
                     xGridIndex < 0 || yGridIndex < 0) {
                     distToVerticalGridBeingHit = __FLT_MAX__;
                     break;
                 }
-                else if (fMap[yGridIndex * MAP_WIDTH + xGridIndex]) {
+                else if (mazes[selected_maze].map[yGridIndex * mazes[selected_maze].width + xGridIndex]) {
 					
-					textureV = fMap[yGridIndex * MAP_WIDTH + xGridIndex] - 1;
+					textureV = mazes[selected_maze].map[yGridIndex * mazes[selected_maze].width + xGridIndex] - 1;
                     distToVerticalGridBeingHit = (yIntersection - fPlayerY) * fISinTable[castArc];
                     break;
                 }
@@ -596,7 +692,7 @@ void render() {
         if (castArc >= ANGLE360)
             castArc -= ANGLE360;
     }
-	//usleep(16667);
+
 	//wait for vblank to send columns
 	while(true) {
 		
@@ -680,29 +776,6 @@ void create_tables() {
         // this will give range 0 to 320
         fFishTable[i + ANGLE30] = (float)(1.0F / cos(radian));
     }
-	
-	fMap = (uint8_t*)calloc((MAP_HEIGHT * MAP_WIDTH), sizeof(uint8_t));
-	
-	//types: B: bluestone, C: colorstone, E: eagle, G: greystone, M: mossy, P: purplestone, R: redbrick, W: wood
-	
-	uint8_t fMapCopy[] =
-		{
-			W,W,W,W,W,B,W,E,W,P,W,W,
-			W,O,O,O,O,O,O,O,O,O,O,W,
-			W,O,O,O,O,O,O,O,O,O,O,W,
-			W,O,O,O,O,O,O,O,W,O,O,W,
-			W,O,O,W,O,W,O,O,W,O,O,W,
-			W,O,O,W,O,W,W,O,W,O,O,W,
-			W,O,O,W,O,O,W,O,W,O,O,W,
-			W,O,O,O,W,O,W,O,W,O,O,W,
-			W,O,O,O,W,O,W,O,W,O,O,W,
-			W,O,O,O,W,W,W,O,W,O,O,W,
-			W,O,O,O,O,O,O,O,O,O,O,W,
-			W,W,W,W,W,W,W,W,W,W,W,W
-		};
-		
-	for (i=0; i < (MAP_HEIGHT * MAP_WIDTH); i++)
-		fMap[i] = fMapCopy[i];
 }
 
   //*******************************************************************//
@@ -714,9 +787,12 @@ float arc_to_rad(float arc_angle) {
 
 /*supplemental functions dealing with screen color override and text*/
 
-void put_char(char character, uint8_t row, uint8_t col) {
+void put_char(char c, uint8_t row, uint8_t col, uint8_t highlight) {
 	
-	char_tile_t char_tile = { character, row, col };
+	if(row >= CHAR_NUM_ROWS || col >= CHAR_NUM_COLS)
+	  return;
+	
+	char_tile_t char_tile = { c, row, col, highlight };
 	
 	if (ioctl(column_decoder_fd, COLUMN_DECODER_WRITE_CHAR, &char_tile)) {
 		perror("ioctl(COLUMN_DECODER_WRITE_CHAR) failed");
@@ -727,12 +803,22 @@ void put_char(char character, uint8_t row, uint8_t col) {
 
 void clear_chars() {
 	
-	for(int row=0; row<CHAR_NUM_ROWS; row++) {
-		for(int col=0; col<CHAR_NUM_COLS; col++)
-			put_char(' ', row, col);
+	for(uint8_t row=0; row<CHAR_NUM_ROWS; row++) {
+		for(uint8_t col=0; col<CHAR_NUM_COLS; col++)
+			put_char(' ', row, col, 0);
 	}
 }
 
+void put_string(const char *s, uint8_t row, uint8_t col, uint8_t highlight)
+{
+  char c;
+  
+  if(row >= CHAR_NUM_ROWS)
+	  return;
+  
+  while ((c = *s++) != 0 && col < CHAR_NUM_COLS)
+	  put_char(c, row, col++, highlight);
+}
 
 void set_blackout(bool blackout) {
 	

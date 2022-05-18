@@ -8,7 +8,7 @@ else
 
 CFLAGS = -Wall
 
-USERLAND_OBJECTS = raycaster.o usbdevices.o 
+USERLAND_OBJECTS = raycaster.o usbdevices.o mazes.o
 
 # We are being compiled as a module: use the Kernel build system
 
@@ -35,8 +35,9 @@ tar : $(TARFILE)
 $(TARFILE) : $(TARFILES)
 	tar zcfC $(TARFILE) .. $(TARFILES:%=software/%)
 
-raycaster.o : raycaster.c usbdevices.h column_decoder.h
+raycaster.o : raycaster.c usbdevices.h column_decoder.h mazes.h
 usbdevices.o : usbdevices.c usbdevices.h
+mazes.o: mazes.c mazes.h
 
 endif 
  

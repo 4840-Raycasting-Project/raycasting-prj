@@ -26,6 +26,8 @@ typedef struct {
   __u8 row;
   __u8 col;
   
+  __u8 highlight;
+  
 } char_tile_t;
 
 

@@ -54,13 +54,13 @@ TODO:
 #define CONTROLLER_DEFAULT 0x7F
 
 //number of levels
-#define NUMLEVELS 5
+#define NUMLEVELS 3
  
 //default selected level for the game
 int levels = 0;
 
 //game levels
-char *level[NUMLEVELS] = {"1.MUDD", "2.CESPR", "3.PUPIN", "4.HAVEMAYER", "5.KENT"}; 
+char *level[NUMLEVELS] = {"1.MUDD", "2.CESPR", "3.PUPIN"}; 
 
 // precomputed trigonometric tables
 float fSinTable[ANGLE360+1];
@@ -219,6 +219,8 @@ int main() {
 
 void *keyboard_thread_f(void *ignored) {
 	
+	printf("keyboard thread called\n");
+
 	int transferred;
 	
 	struct usb_keyboard_packet packet;
@@ -238,7 +240,7 @@ void *keyboard_thread_f(void *ignored) {
 		      	packet.keycode[1],packet.keycode[2],packet.keycode[3],packet.keycode[4],packet.keycode[5]);
 	      		//fbputs(keystate, 6, 0,1);			//for debug
 
-			printf("%s\n",keystate);
+			//printf("%s\n",keystate);
 
 			//if (packet.keycode[1] != CONTROLLER_DEFAULT || packet.keycode[2] != CONTROLLER_DEFAULT) { 
 
@@ -247,11 +249,11 @@ void *keyboard_thread_f(void *ignored) {
 				//left_pressed 	= is_key_pressed(1,0x00, packet.keycode);
 				//right_pressed 	= is_key_pressed(1,0xff, packet.keycode);
 
-				up_pressed 	= is_key_pressed(0x52, packet.keycode);
-				down_pressed 	= is_key_pressed(0x51, packet.keycode);
-				left_pressed 	= is_key_pressed(0x50, packet.keycode);
-				right_pressed 	= is_key_pressed(0x4f, packet.keycode);
-				enter_pressed   = is_key_pressed(0x28, packet.keycode);
+				up_pressed 	= is_key_pressed(0,0x52, packet.keycode);
+				down_pressed 	= is_key_pressed(0,0x51, packet.keycode);
+				left_pressed 	= is_key_pressed(0,0x50, packet.keycode);
+				right_pressed 	= is_key_pressed(0,0x4f, packet.keycode);
+				enter_pressed   = is_key_pressed(0,0x28, packet.keycode);
 			//}
 			/*else {
 				up_pressed 	= false;
@@ -486,8 +488,6 @@ void level_select() {
 	 * 1. MUDD
 	 * 2. CEPSR
 	 * 3. PUPIN
-	 * 4. HAVEMAYER
-	 * 5. KENT
 	 *
 
 	char *temp_levels[5];
@@ -547,20 +547,28 @@ void level_select() {
 		 usleep(100000);
  	 }*/
 
+	int ctr = 0;
 	 while (1) {
-
+		
+		if (up_pressed == 0 && down_pressed == 0) {
+			ctr = 0;
+		}
+		if (ctr != 0 /*&& loop_start_flag!=0*/)
+			continue;
 
 		if(up_pressed) {
 			if (levels - 1 == -1)
 				continue;
 			levels--;
 			printf("levels: %d\n",levels);
+			ctr++;
 		}
 		else if(down_pressed) {
 			if (levels + 1 == NUMLEVELS)
 				continue;
 			levels++;
 			printf("levels: %d\n",levels);
+			ctr++;
 		}
 		else if (enter_pressed)
 			break;
@@ -568,12 +576,9 @@ void level_select() {
 		 fbputs(level[0],10,25,levels == 0 ? 1 : 0);
 		 fbputs(level[1],11,25,levels == 1 ? 1 : 0);
 		 fbputs(level[2],12,25,levels == 2 ? 1 : 0);
-		 fbputs(level[3],13,25,levels == 3 ? 1 : 0);
-		 fbputs(level[4],14,25,levels == 4 ? 1 : 0);
 
-		 usleep(100000);
+		 //usleep(100000);
  	 }
-
 }
 
 void create_tables() {

@@ -5,11 +5,6 @@
  * Adam Carpentieri AC4409
  * Columbia University
 
-    TODO:
-    3. Ceiling and floor gradients / colors
-    4. Blackout screen toggle
-    5. Text module
-    
  */
 
 module column_decoder(input logic clk,
@@ -65,13 +60,20 @@ module column_decoder(input logic clk,
     //character generator state
     logic [4:0] char_write_row;
     logic [6:0] char_write_col;
-    logic [6:0] char_write_char;
-    logic       char_write;
-    logic       char_on;
+    logic [7:0] char_write_char;
+    logic       char_write_highlight;
+    logic       char_write = 1'b0;
 
-    columns columns0(clk, reset, col_write[0], colnum[0], new_sfdata[0], new_coldata[0], sf_data[0], col_data[0]),
-            columns1(clk, reset, col_write[1], colnum[1], new_sfdata[1], new_coldata[1], sf_data[1], col_data[1]),
-            columns2(clk, reset, col_write[2], colnum[2], new_sfdata[2], new_coldata[2], sf_data[2], col_data[2]);
+    logic [4:0] char_cur_row = 5'h0;
+    logic [3:0] char_cur_row_offset = 4'h0;
+    logic [6:0] char_cur_col = 7'h0;
+    logic [2:0] char_cur_col_offset = 3'h0;
+
+    logic       char_on = 1'b0;
+
+    columns columns0 (clk, reset, col_write[0], colnum[0], new_sfdata[0], new_coldata[0], sf_data[0], col_data[0]),
+            columns1 (clk, reset, col_write[1], colnum[1], new_sfdata[1], new_coldata[1], sf_data[1], col_data[1]),
+            columns2 (clk, reset, col_write[2], colnum[2], new_sfdata[2], new_coldata[2], sf_data[2], col_data[2]);
 
     textures textures0 (texture_type_select, 
         texture_row_select, 
@@ -79,9 +81,9 @@ module column_decoder(input logic clk,
         cur_texture_rgb_vals
     );
 
-    chars chars0 (.*);
+    vga_counters counters (.clk50(clk), .*);
 
-    vga_counters counters(.clk50(clk), .*);
+    chars chars0 (.*);
 
     always_ff @(posedge clk) begin
 
@@ -147,12 +149,13 @@ module column_decoder(input logic clk,
             end
             
             else if(address == 4'h2) begin
-                char_write_char = writedata[6:0];                
+                char_write_char <= writedata[7:0];                
             end
 
             else if(address == 4'h3) begin
                 char_write_row <= writedata[4:0];
-                char_write_col <= writedata[10:5];
+                char_write_col <= writedata[11:5];
+                char_write_highlight <= writedata[12];
                 char_write <= 1'b1;
             end
 
@@ -163,8 +166,10 @@ module column_decoder(input logic clk,
             if(address != 4'h3)
                 char_write <= 1'b0;
         end
-        else
+        else begin
             col_write <= 3'b0;
+            char_write <= 1'b0;
+        end
 
     //pixel pipeline
    // always_ff @(posedge clk)
@@ -211,8 +216,8 @@ module column_decoder(input logic clk,
         
         if(pixel_type == 2'h1) begin
 
-            next_pixel = cur_texture_rgb_vals;
-            next_pixel_wall_dir = pixel_wall_dir;
+            next_pixel <= cur_texture_rgb_vals;
+            next_pixel_wall_dir <= pixel_wall_dir;
         end
 
     //swap out column module to read from if new avail and in between frames
@@ -222,6 +227,33 @@ module column_decoder(input logic clk,
 
             new_columns_ready <= 1'b0;
             col_module_index_to_read <= 2'b11 ^ col_module_index_to_read ^ col_module_index_to_write;
+        end
+
+        //char row   
+        if(vcount >= 10'h1e0) begin //480
+            char_cur_row <= 5'h0;
+            char_cur_row_offset <= 4'h0;
+
+        end else if(hcount[10:1] == 10'h280 && !hcount[0]) begin //640
+               
+            char_cur_row_offset <= char_cur_row_offset + 4'h1; 
+
+            if(char_cur_row_offset == 4'hf)
+                char_cur_row <= char_cur_row + 5'h1;
+        end
+
+        //char col
+        if(hcount[10:1] >= 10'h280) begin //640
+
+            char_cur_col <= 7'h0;
+            char_cur_col_offset <= 3'h0;
+        
+        end else if(hcount[10:1] < 10'h280 && !hcount[0]) begin //640
+            
+            char_cur_col_offset <= char_cur_col_offset + 3'h1;
+            
+            if(char_cur_col_offset == 3'h7)
+                char_cur_col <= char_cur_col + 7'h1;
         end
 
     end
@@ -316,7 +348,7 @@ module textures(
     output logic [23:0] texture_data
 );
 
-    logic [23:0] textures [32767:0]; //texture type, row num, col num
+    logic [23:0] textures [0:32767]; //texture type, row num, col num
 
     //https://projectf.io/posts/initialize-memory-in-verilog/
     initial begin
@@ -328,29 +360,35 @@ module textures(
 
 endmodule
 
-
 module chars(
     input logic clk,
-
-    input logic [10:0] hcount,  // hcount[10:1] is pixel column
-    input logic [9:0]  vcount,
     
     input logic [4:0] char_write_row,
     input logic [6:0] char_write_col,
-    input logic [6:0] char_write_char,
+    input logic [7:0] char_write_char,
+    input logic       char_write_highlight,
     input logic       char_write,
+
+    input logic [4:0] char_cur_row,
+    input logic [3:0] char_cur_row_offset,
+    input logic [6:0] char_cur_col,
+    input logic [2:0] char_cur_col_offset,
     
     output logic char_on
 );
 
-    logic [7:0] char_data [2047:0];
-    logic [6:0] chars [2399:0];
+    logic [7:0] char_data [0:2047];
+    logic [7:0] chars [2399:0];
+    logic       chars_highlight [2399:0];
 
-    logic [4:0] cur_row = 5'h0;
-    logic [3:0] cur_row_offset = 4'h0;
+    logic [21:0] char_data_index;
+    logic [21:0] char_index_to_write = 22'b0;
+    logic        char_write_now = 1'b0;
 
-    logic [6:0] cur_col = 7'h0;
-    logic [2:0] cur_col_offset = 4'h0;
+    logic char_highlight_to_write;
+    logic [7:0] char_to_write;
+
+    logic char_highlight;
 
     integer i;
 
@@ -361,45 +399,35 @@ module chars(
 
     initial begin
         for (i=12'h0; i<12'h960; i=i+12'h1) begin 
-            chars[i] <= 7'h20; //space
+            chars[i] <= 8'h20; //space
+            chars_highlight[i] <= 1'b0;
         end
     end
 
     always_ff @(posedge clk) begin
 
         if(char_write) begin
-            chars[(char_write_row * 7'h50) + char_write_col] <= char_write_char;    
+            char_index_to_write <= (char_write_row * 11'h50) + char_write_col;
+            char_to_write <= char_write_char;
+            char_highlight_to_write <= char_write_highlight;
+            char_write_now <= 1'b1;
         end 
 
-        //row   
-        if(vcount >= 10'h1e0) begin //480
-            cur_row <= 5'h0;
-            cur_row_offset <= 4'h0;
-
-        end else begin 
-            
-            if(cur_row_offset == 4'h0 && vcount != 10'h0)
-                cur_row <= cur_row + 1;
-
-            if(hcount[10:1] == 10'h280) //640
-                cur_row_offset <= cur_row_offset + 1; 
+        if(char_write_now) begin
+            chars[char_index_to_write] <= char_to_write;
+            chars_highlight[char_index_to_write] <= char_write_highlight;
+            char_write_now <= 1'b0;
         end
 
-        //col
-        if(hcount[10:1] == 10'h31f) begin //799
-            cur_col <= 7'h0;
-            cur_col_offset <= 3'h0;
-        
-        end else if(hcount[10:1] <= 10'h27e && !hcount[0]) begin //638
-            
-            cur_col_offset <= cur_col_offset + 3'h1;
-            
-            if(cur_col_offset == 3'h0 && hcount[10:1] != 10'h0)
-                cur_col <= cur_col + 7'h1;
-        end
+        //pipeline step 1
+        char_data_index <= 
+            ((chars[(char_cur_row * 12'h50) + char_cur_col]) * 12'h10) 
+            + char_cur_row_offset;
 
-        char_on <= char_data[chars[(cur_row * 7'h50) + cur_col]][(cur_row_offset * 4'h8) + cur_col_offset];
+        char_highlight <= chars_highlight[(char_cur_row * 12'h50) + char_cur_col];
     end
+
+    assign char_on = char_data[char_data_index[11:0]][char_cur_col_offset] - char_highlight;
 
 endmodule
 
