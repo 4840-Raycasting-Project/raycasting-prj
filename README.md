@@ -8,3 +8,11 @@ Members/Collaborators:
 ### Block Diagram
 
 ![alt text](https://github.com/4840-Raycasting-Project/raycasting-prj/blob/master/block_diagram.png)
+
+
+### Inside the game  
+
+![alt text](https://github.com/4840-Raycasting-Project/raycasting-prj/blob/master/game_start.jpg)  
+
+![alt text](https://github.com/4840-Raycasting-Project/raycasting-prj/blob/master/maze_end.jpg)
+
